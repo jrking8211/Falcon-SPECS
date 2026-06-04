@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Falcon Development – Project Dashboard</title>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <style>
     :root {
       --navy: #221F1F;
@@ -366,12 +368,70 @@
 </div>
 
 <script>
-// ─── STORAGE ───────────────────────────────────────────────────
+// ─── FIREBASE CONFIG ───────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyDVU4C0aQe8xhO22OqC6c0E9rmV5G9Lmqo",
+  authDomain: "falcon-specs.firebaseapp.com",
+  projectId: "falcon-specs",
+  storageBucket: "falcon-specs.firebasestorage.app",
+  messagingSenderId: "271815403807",
+  appId: "1:271815403807:web:ca35feff089306d24a282a"
+};
+
+let db = null;
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326'];
+
+// ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
-  get(k, d) { try { return JSON.parse(localStorage.getItem('fd_' + k)) ?? d; } catch { return d; } },
-  set(k, v) { localStorage.setItem('fd_' + k, JSON.stringify(v)); }
+  get(k, d)      { try { return JSON.parse(localStorage.getItem('fd_' + k)) ?? d; } catch { return d; } },
+  setLocal(k, v) { localStorage.setItem('fd_' + k, JSON.stringify(v)); },
+  set(k, v) {
+    localStorage.setItem('fd_' + k, JSON.stringify(v));
+    if (db && FS_KEYS.includes(k)) {
+      db.collection('dashboard').doc(k).set({ value: v })
+        .catch(err => console.warn('Firestore write error:', err));
+    }
+  }
 };
 const getAdminPin = () => S.get('admin_pin', '1234');
+
+// ─── FIRESTORE INIT & REAL-TIME SYNC ──────────────────────────
+function initFirebase() {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+
+  // Real-time listeners — update any device instantly when data changes
+  FS_KEYS.forEach(key => {
+    db.collection('dashboard').doc(key).onSnapshot(snap => {
+      if (!snap.exists) return;
+      const incoming = snap.data()?.value;
+      if (incoming === undefined) return;
+      // Only update if data actually changed (avoid re-render loops)
+      if (JSON.stringify(S.get(key, null)) === JSON.stringify(incoming)) return;
+      S.setLocal(key, incoming);
+      handleFirestoreUpdate(key);
+    }, err => console.warn('Firestore listener error:', err));
+  });
+
+  // Push any local data that isn't in Firestore yet (first-time migration)
+  FS_KEYS.forEach(key => {
+    const local = S.get(key, null);
+    if (local !== null) {
+      db.collection('dashboard').doc(key).get().then(snap => {
+        if (!snap.exists) S.set(key, local);
+      });
+    }
+  });
+}
+
+function handleFirestoreUpdate(key) {
+  if      (key === 'stages_330')  renderStages('330');
+  else if (key === 'stages_326')  renderStages('326');
+  else if (key === 'budget_330')  { renderBudget('330'); renderProjectDetail('330'); }
+  else if (key === 'budget_326')  { renderBudget('326'); renderProjectDetail('326'); }
+  else if (key === 'employees')   { refreshEmployeeSelects(); renderEmployeeList(); }
+  else if (key === 'timelogs')    { renderMyEntries(); renderAdminEntries(); }
+}
 
 // ─── QB REAL DATA (from balance sheet pulled 2026-06-04) ────────
 const QB_INVENTORY = {
@@ -1109,12 +1169,14 @@ function seedEmployees() {
     { name: 'Thomas K. Smith', pin: '1010', hourlyRate: 36.06 },
     { name: 'Frank Hester',    pin: '1306', hourlyRate: 20.00 }
   ];
-  S.set('employees', qbEmployees);
+  // Use setLocal only — Firestore onSnapshot will provide real data if it exists
+  S.setLocal('employees', qbEmployees);
 }
 
 // ─── INIT ──────────────────────────────────────────────────────
 function init() {
   document.getElementById('tl-date').valueAsDate = new Date();
+  initFirebase();
   seedEmployees();
   renderStages('330'); renderStages('326');
   renderBudget('330'); renderBudget('326');
