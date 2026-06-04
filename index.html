@@ -216,9 +216,12 @@
       </div>
       <div class="form-group">
         <label>Project</label>
-        <select id="tl-project">
-          <option value="330 Roddy Branch">330 Roddy Branch</option>
-          <option value="326 Roddy Branch">326 Roddy Branch</option>
+        <select id="tl-project"></select>
+      </div>
+      <div class="form-group">
+        <label>Cost Code</label>
+        <select id="tl-costcode">
+          <option value="">Select Cost Code…</option>
         </select>
       </div>
       <div class="form-group">
@@ -461,6 +464,40 @@ const PLAN_DATA = {
   }
 };
 
+// ─── COST CODES ────────────────────────────────────────────────
+// Names TBD — update labels once confirmed
+const COST_CODES = [
+  { code: '6201', label: '6201' },
+  { code: '6204', label: '6204' },
+  { code: '6205', label: '6205' },
+];
+
+function getActiveProjects() {
+  return Object.entries(PLAN_DATA)
+    .filter(([key, p]) => {
+      if (!p.sqftTotal) return false; // skip placeholder entries
+      const stages = S.get('stages_' + key, {});
+      return stages[STAGES.length - 1] !== 'complete'; // not "Project Complete"
+    })
+    .map(([key, p]) => ({ key, name: p.name }));
+}
+
+function refreshProjectDropdown() {
+  const active = getActiveProjects();
+  const sel = document.getElementById('tl-project');
+  if (!sel) return;
+  sel.innerHTML = active.length
+    ? active.map(p => `<option value="${esc(p.name)}">${p.name}</option>`).join('')
+    : '<option value="">No active projects</option>';
+}
+
+function refreshCostCodeDropdown() {
+  const sel = document.getElementById('tl-costcode');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Select Cost Code…</option>' +
+    COST_CODES.map(c => `<option value="${c.code}">${c.label}</option>`).join('');
+}
+
 // ─── CONSTRUCTION STAGES ───────────────────────────────────────
 const STAGES = [
   'Site Prep & Permits','Foundation Poured','Foundation Complete',
@@ -588,16 +625,17 @@ function refreshEmployeeSelects() {
 }
 
 function submitTimeLog() {
-  const emp  = document.getElementById('tl-employee').value.trim();
-  const pin  = document.getElementById('tl-pin').value.trim();
-  const date = document.getElementById('tl-date').value;
-  const proj = document.getElementById('tl-project').value;
-  const st   = document.getElementById('tl-start').value;
-  const en   = document.getElementById('tl-end').value;
-  const rate = parseFloat(document.getElementById('tl-rate').value) || 0;
-  const desc = document.getElementById('tl-desc').value.trim();
+  const emp      = document.getElementById('tl-employee').value.trim();
+  const pin      = document.getElementById('tl-pin').value.trim();
+  const date     = document.getElementById('tl-date').value;
+  const proj     = document.getElementById('tl-project').value;
+  const costcode = document.getElementById('tl-costcode').value;
+  const st       = document.getElementById('tl-start').value;
+  const en       = document.getElementById('tl-end').value;
+  const rate     = parseFloat(document.getElementById('tl-rate').value) || 0;
+  const desc     = document.getElementById('tl-desc').value.trim();
 
-  if (!emp || !pin || !date || !st || !en) { toast('Please fill in all required fields.', 'error'); return; }
+  if (!emp || !pin || !date || !proj || !costcode || !st || !en) { toast('Please fill in all required fields including project and cost code.', 'error'); return; }
   if (rate <= 0) { toast('Please enter an hourly rate.', 'error'); return; }
 
   const employee = getEmployees().find(e => e.name === emp);
@@ -609,11 +647,14 @@ function submitTimeLog() {
   if (hours <= 0) { toast('End time must be after start time.', 'error'); return; }
 
   const amount = Math.round(hours * rate * 100) / 100;
+  const ccLabel = COST_CODES.find(c => c.code === costcode)?.label || costcode;
   const entry = {
     id: Date.now(),
     employee: emp,
     date,
     project: proj,
+    costCode: costcode,
+    costCodeLabel: ccLabel,
     startTime: st,
     endTime: en,
     hours: Math.round(hours * 100) / 100,
@@ -625,10 +666,11 @@ function submitTimeLog() {
   logs.push(entry);
   S.set('timelogs', logs);
 
-  document.getElementById('tl-start').value   = '';
-  document.getElementById('tl-end').value     = '';
-  document.getElementById('tl-desc').value    = '';
-  document.getElementById('tl-pin').value     = '';
+  document.getElementById('tl-start').value    = '';
+  document.getElementById('tl-end').value      = '';
+  document.getElementById('tl-desc').value     = '';
+  document.getElementById('tl-pin').value      = '';
+  document.getElementById('tl-costcode').value = '';
 
   toast(`✓ ${hours.toFixed(2)} hrs / ${fmt(amount)} logged for ${emp}`);
   renderMyEntries();
@@ -646,9 +688,10 @@ function renderMyEntries() {
   container.innerHTML = `
     <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px;">Last ${logs.length} entries · <strong style="color:var(--gold);">${totalHrs.toFixed(2)} hrs / ${fmt(totalAmt)}</strong></div>
     <div class="table-wrap"><table class="data-table">
-      <thead><tr><th>Date</th><th>Project</th><th>Hrs</th><th>Rate</th><th>Amount</th><th>Description</th></tr></thead>
+      <thead><tr><th>Date</th><th>Project</th><th>Cost Code</th><th>Hrs</th><th>Rate</th><th>Amount</th><th>Description</th></tr></thead>
       <tbody>${logs.map(l=>`<tr>
         <td>${l.date}</td><td>${l.project}</td>
+        <td><span class="badge badge-gold">${l.costCode||'—'}</span></td>
         <td><strong>${l.hours.toFixed(2)}</strong></td>
         <td>$${(l.hourlyRate||0).toFixed(2)}</td>
         <td><strong>${fmt(l.amount||0)}</strong></td>
@@ -685,9 +728,10 @@ function renderAdminEntries() {
       <span style="font-size:0.8rem;color:var(--text-muted);">Total: <strong style="color:var(--text);">${totalHrs.toFixed(2)} hrs · ${fmt(totalAmt)}</strong></span>
     </div>
     <div class="table-wrap"><table class="data-table">
-      <thead><tr><th>Date</th><th>Employee</th><th>Project</th><th>Hrs</th><th>Rate</th><th>Amount</th><th>Start</th><th>End</th><th>Description</th><th></th></tr></thead>
+      <thead><tr><th>Date</th><th>Employee</th><th>Project</th><th>Code</th><th>Hrs</th><th>Rate</th><th>Amount</th><th>Start</th><th>End</th><th>Description</th><th></th></tr></thead>
       <tbody>${logs.map(l=>`<tr>
         <td>${l.date}</td><td>${l.employee}</td><td>${l.project}</td>
+        <td><span class="badge badge-gold">${l.costCode||'—'}</span></td>
         <td><strong>${l.hours.toFixed(2)}</strong></td>
         <td>$${(l.hourlyRate||0).toFixed(2)}</td>
         <td><strong>${fmt(l.amount||0)}</strong></td>
@@ -737,14 +781,17 @@ function exportJournalCSV() {
 
   // Group by date+employee+project for one JE per entry
   logs.forEach(l => {
-    const inventoryAcct = l.project === '330 Roddy Branch'
-      ? 'Inventory Asset:330 Roddy Branch'
-      : 'Inventory Asset:326 Roddy Branch';
+    const ccLabel = COST_CODES.find(c => c.code === l.costCode)?.label || l.costCode || '6201';
+    const debitAcct = ccLabel;
     const amount  = (l.amount || (l.hours * (l.hourlyRate||0))).toFixed(2);
-    const desc    = l.description ? `${l.description} (${l.hours.toFixed(2)} hrs @ $${(l.hourlyRate||0).toFixed(2)}/hr)` : `Labor ${l.hours.toFixed(2)} hrs @ $${(l.hourlyRate||0).toFixed(2)}/hr`;
-    // Debit line — capitalize labor into Inventory Asset
-    rows.push([jNo, l.date, 'USD', csvQ(inventoryAcct), amount, '', csvQ(desc), csvQ(l.employee), '', ''].join(','));
-    // Credit line — record wage expense
+    const desc    = [
+      l.description || 'Labor',
+      `${l.hours.toFixed(2)} hrs @ $${(l.hourlyRate||0).toFixed(2)}/hr`,
+      l.project
+    ].filter(Boolean).join(' · ');
+    // Debit line — cost code account
+    rows.push([jNo, l.date, 'USD', csvQ(debitAcct), amount, '', csvQ(desc), csvQ(l.employee), '', ''].join(','));
+    // Credit line — wages
     rows.push([jNo, l.date, 'USD', '6901 Wages', '', amount, csvQ(desc), csvQ(l.employee), '', ''].join(','));
     jNo++;
   });
@@ -1059,6 +1106,8 @@ function init() {
   renderBudget('330'); renderBudget('326');
   renderProjectDetail('330'); renderProjectDetail('326');
   refreshEmployeeSelects();
+  refreshProjectDropdown();
+  refreshCostCodeDropdown();
   document.getElementById('sync-status').textContent =
     'QB sync ' + new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'});
 }
