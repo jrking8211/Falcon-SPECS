@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Falcon Development – Project Dashboard</title>
+  <style>
+    :root {
+      --navy: #221F1F;
+      --gold: #5DB3E4;
+      --gold-light: #82C8ED;
+      --blue: #5DB3E4;
+      --orange: #F58726;
+      --orange-bright: #FE8302;
+      --bg: #181515;
+      --surface: #2A2626;
+      --surface2: #363030;
+      --text: #F5F0EE;
+      --text-muted: #A09490;
+      --green: #22c55e;
+      --red: #ef4444;
+      --border: #443D3D;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    header { background: var(--navy); border-bottom: 3px solid var(--gold); padding: 10px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
+    .logo-img { height: 52px; width: auto; display: block; }
+    .logo-sub { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; letter-spacing: 1px; text-transform: uppercase; }
+    .sync-btn { background: var(--orange); color: var(--navy); border: none; padding: 8px 16px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 0.82rem; letter-spacing: 0.5px; }
+    .sync-btn:hover { background: var(--orange-bright); }
+    #sync-status { font-size: 0.72rem; color: var(--text-muted); }
+
+    .tabs { display: flex; background: var(--navy); padding: 0 24px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { padding: 12px 18px; cursor: pointer; color: var(--text-muted); font-weight: 500; font-size: 0.88rem; border-bottom: 3px solid transparent; white-space: nowrap; transition: all 0.15s; }
+    .tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+    .tab:hover:not(.active) { color: var(--text); }
+
+    .view { display: none; padding: 24px; max-width: 1200px; margin: 0 auto; }
+    .view.active { display: block; }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .card-title { font-size: 0.78rem; font-weight: 700; color: var(--gold); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1.5px; }
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .section-header .card-title { margin-bottom: 0; }
+
+    .budget-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 10px; }
+    .budget-item { background: var(--surface2); border-radius: 8px; padding: 14px; text-align: center; }
+    .b-label { font-size: 0.68rem; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .b-value { font-size: 1.25rem; font-weight: 700; color: var(--text); }
+    .b-value.green { color: var(--green); } .b-value.gold { color: var(--gold); } .b-value.red { color: var(--red); }
+    .progress-bar { background: var(--surface2); border-radius: 4px; height: 8px; margin-top: 14px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-light)); border-radius: 4px; transition: width 0.5s ease; }
+    .progress-fill.over { background: linear-gradient(90deg, var(--orange), var(--red)); }
+    .progress-label { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; }
+
+    .qb-live { font-size: 0.7rem; background: rgba(93,179,228,0.15); color: var(--blue); padding: 2px 7px; border-radius: 4px; font-weight: 600; }
+
+    .stages-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+    .stage-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface2); border-radius: 8px; border: 1px solid var(--border); cursor: pointer; transition: border-color 0.15s, background 0.15s; user-select: none; }
+    .stage-item:hover { border-color: var(--gold); }
+    .stage-item.complete { border-color: var(--green); background: rgba(34,197,94,0.07); }
+    .stage-item.in-progress { border-color: var(--gold); background: rgba(201,162,39,0.08); }
+    .stage-dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; transition: all 0.15s; }
+    .stage-item.complete .stage-dot { background: var(--green); border-color: var(--green); color: white; }
+    .stage-item.in-progress .stage-dot { background: var(--gold); border-color: var(--gold); color: var(--navy); }
+    .stage-name { font-size: 0.86rem; flex: 1; line-height: 1.3; }
+    .stage-badge { font-size: 0.65rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; flex-shrink: 0; white-space: nowrap; }
+    .stage-item.complete .stage-badge { background: rgba(34,197,94,0.15); color: var(--green); }
+    .stage-item.in-progress .stage-badge { background: rgba(201,162,39,0.15); color: var(--gold); }
+    .click-hint { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .form-group input, .form-group select { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; color: var(--text); font-size: 0.9rem; outline: none; width: 100%; }
+    .form-group input:focus, .form-group select:focus { border-color: var(--gold); }
+    .form-group select option { background: var(--navy); }
+    .form-group.full { grid-column: 1 / -1; }
+
+    .btn { padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; font-size: 0.88rem; transition: all 0.15s; white-space: nowrap; }
+    .btn-primary { background: var(--gold); color: var(--navy); }
+    .btn-primary:hover { background: var(--gold-light); }
+    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--gold); color: var(--gold); }
+    .btn-danger { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+    .btn-danger:hover { background: rgba(239,68,68,0.25); }
+    .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+
+    .data-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    .data-table th { text-align: left; padding: 10px 12px; color: var(--text-muted); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+    .data-table td { padding: 10px 12px; border-bottom: 1px solid rgba(45,64,112,0.4); vertical-align: middle; }
+    .data-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .table-wrap { overflow-x: auto; }
+
+    .badge { display: inline-block; padding: 3px 9px; border-radius: 10px; font-size: 0.73rem; font-weight: 600; }
+    .badge-green { background: rgba(34,197,94,0.13); color: var(--green); }
+    .badge-gold { background: rgba(201,162,39,0.13); color: var(--gold); }
+    .badge-gray { background: rgba(138,155,191,0.13); color: var(--text-muted); }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; z-index: 200; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 32px 28px; width: 320px; text-align: center; }
+    .modal h2 { color: var(--gold); font-size: 1.2rem; margin-bottom: 6px; }
+    .modal p { color: var(--text-muted); font-size: 0.82rem; margin-bottom: 20px; }
+    .pin-display { font-size: 2rem; letter-spacing: 14px; color: var(--gold); margin-bottom: 20px; height: 44px; display: flex; align-items: center; justify-content: center; }
+    .pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+    .pin-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 15px; font-size: 1.1rem; font-weight: 600; color: var(--text); cursor: pointer; transition: all 0.1s; }
+    .pin-btn:hover { background: var(--navy); border-color: var(--gold); }
+    .pin-btn:active { transform: scale(0.94); }
+    .pin-error { color: var(--red); font-size: 0.82rem; margin-top: 8px; min-height: 20px; }
+
+    .emp-input { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 10px; color: var(--text); font-size: 0.9rem; outline: none; text-align: center; width: 100%; margin-bottom: 10px; }
+    .emp-input:focus { border-color: var(--gold); }
+
+    .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 8px; font-weight: 600; font-size: 0.88rem; z-index: 300; animation: slideIn 0.25s ease; max-width: 300px; }
+    @keyframes slideIn { from { transform: translateX(120px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 0.88rem; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+    .info-box { background: rgba(201,162,39,0.08); border: 1px solid rgba(201,162,39,0.25); border-radius: 8px; padding: 12px 16px; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px; }
+    .info-box strong { color: var(--gold); }
+
+    /* Project detail */
+    .spec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 16px; }
+    .spec-item { background: var(--surface2); border-radius: 8px; padding: 12px; text-align: center; }
+    .spec-item .s-val { font-size: 1.3rem; font-weight: 700; color: var(--gold); }
+    .spec-item .s-lbl { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; margin-top: 4px; }
+    .features-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+    .feat-tag { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 3px 9px; font-size: 0.75rem; color: var(--text-muted); }
+    .budget-line-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    .budget-line-table th { text-align: left; padding: 8px 10px; color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+    .budget-line-table td { padding: 8px 10px; border-bottom: 1px solid rgba(45,64,112,0.3); }
+    .budget-line-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .budget-line-table .total-row td { border-top: 2px solid var(--gold); font-weight: 700; color: var(--gold); background: rgba(201,162,39,0.06); }
+    .budget-line-table .spent-row td { color: var(--red); font-weight: 600; }
+    .budget-line-table .remain-row td { color: var(--green); font-weight: 700; font-size: 0.9rem; }
+    .comp-box { background: var(--surface2); border-radius: 8px; padding: 14px 16px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.6; }
+    .comp-box strong { color: var(--text); }
+    .comp-box .price-tag { font-size: 1.6rem; font-weight: 800; color: var(--green); display: block; margin-top: 8px; }
+    .comp-box .price-range { font-size: 0.8rem; color: var(--text-muted); }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media(max-width:700px){ .two-col { grid-template-columns: 1fr; } }
+
+    @media (max-width: 640px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .form-group.full { grid-column: 1; }
+      .budget-grid { grid-template-columns: repeat(2, 1fr); }
+      header { padding: 12px 16px; }
+      .view { padding: 16px; }
+      #sync-status { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <img src="logo.png" alt="Falcon Development" class="logo-img">
+  <div style="display:flex;align-items:center;gap:10px;">
+    <span id="sync-status"></span>
+    <button class="sync-btn" onclick="showSyncHelp()">⟳ Sync QB</button>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('p330')">330 Roddy Branch</div>
+  <div class="tab" onclick="switchTab('p326')">326 Roddy Branch</div>
+  <div class="tab" onclick="switchTab('timelog')">⏱ Time Log</div>
+  <div class="tab" onclick="requireAdmin('admin')">⚙ Admin</div>
+</div>
+
+<!-- 330 RODDY BRANCH -->
+<div class="view active" id="view-p330">
+  <div id="budget-330"></div>
+  <div id="projdetail-330"></div>
+  <div class="card">
+    <div class="section-header">
+      <div class="card-title">Construction Stages</div>
+      <span id="stage-badge-330" class="badge badge-gold"></span>
+    </div>
+    <p class="click-hint">Click once = In Progress &nbsp;·&nbsp; Click again = Complete &nbsp;·&nbsp; Click again = Reset</p>
+    <div class="stages-grid" id="stages-330"></div>
+  </div>
+</div>
+
+<!-- 326 RODDY BRANCH -->
+<div class="view" id="view-p326">
+  <div id="budget-326"></div>
+  <div id="projdetail-326"></div>
+  <div class="card">
+    <div class="section-header">
+      <div class="card-title">Construction Stages</div>
+      <span id="stage-badge-326" class="badge badge-gold"></span>
+    </div>
+    <p class="click-hint">Click once = In Progress &nbsp;·&nbsp; Click again = Complete &nbsp;·&nbsp; Click again = Reset</p>
+    <div class="stages-grid" id="stages-326"></div>
+  </div>
+</div>
+
+<!-- TIME LOG -->
+<div class="view" id="view-timelog">
+  <div class="card">
+    <div class="card-title">Log Your Time</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Your Name</label>
+        <select id="tl-employee" onchange="onEmployeeChange()"><option value="">Select Employee…</option></select>
+      </div>
+      <div class="form-group">
+        <label>PIN</label>
+        <input type="password" id="tl-pin" placeholder="Enter PIN" maxlength="6" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Date</label>
+        <input type="date" id="tl-date">
+      </div>
+      <div class="form-group">
+        <label>Project</label>
+        <select id="tl-project">
+          <option value="330 Roddy Branch">330 Roddy Branch</option>
+          <option value="326 Roddy Branch">326 Roddy Branch</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Start Time</label>
+        <input type="time" id="tl-start">
+      </div>
+      <div class="form-group">
+        <label>End Time</label>
+        <input type="time" id="tl-end">
+      </div>
+      <div class="form-group">
+        <label>Hourly Rate ($)</label>
+        <input type="number" id="tl-rate" placeholder="e.g. 22.00" min="0" step="0.01">
+      </div>
+      <div class="form-group">
+        <label>Work Description</label>
+        <input type="text" id="tl-desc" placeholder="e.g. Drywall taping, Framing, Rough electrical…">
+      </div>
+      <div class="form-group full">
+        <button class="btn btn-primary" onclick="submitTimeLog()">Submit Time Entry</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">My Recent Entries</div>
+    <div id="tl-my-entries"><div class="empty-state">Select your name above to see your recent entries.</div></div>
+  </div>
+</div>
+
+<!-- ADMIN -->
+<div class="view" id="view-admin">
+  <div class="card">
+    <div class="section-header">
+      <div class="card-title">All Time Entries</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" onclick="exportJournalCSV()">↓ Export QB Journal CSV</button>
+        <button class="btn btn-secondary btn-sm" onclick="renderAdminEntries()">Refresh</button>
+      </div>
+    </div>
+    <div class="info-box">
+      <strong>QB Import:</strong> Go to QuickBooks Online → Settings → Import Data → Journal Entries. Upload the exported CSV. Each time entry creates one journal entry: <strong>Debit Inventory Asset:[Project]</strong> / <strong>Credit 6901 Wages</strong>.
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+      <select id="filter-project" onchange="renderAdminEntries()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);outline:none;font-size:0.85rem;">
+        <option value="">All Projects</option>
+        <option value="330 Roddy Branch">330 Roddy Branch</option>
+        <option value="326 Roddy Branch">326 Roddy Branch</option>
+      </select>
+      <select id="filter-employee" onchange="renderAdminEntries()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);outline:none;font-size:0.85rem;">
+        <option value="">All Employees</option>
+      </select>
+      <input type="week" id="filter-week" onchange="renderAdminEntries()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);outline:none;font-size:0.85rem;">
+    </div>
+    <div id="admin-entries-table"></div>
+  </div>
+
+  <div class="card">
+    <div class="section-header">
+      <div class="card-title">Employees &amp; PINs</div>
+      <button class="btn btn-primary btn-sm" onclick="showAddEmployee()">+ Add Employee</button>
+    </div>
+    <div id="employee-list"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Admin Settings</div>
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+      <div class="form-group" style="min-width:160px;">
+        <label>New Admin PIN</label>
+        <input type="password" id="new-admin-pin" placeholder="4–6 digits" maxlength="6" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;color:var(--text);outline:none;">
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="changeAdminPin()">Update PIN</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Budget / Cost Data</div>
+    <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:16px;">Inventory Asset balances are pulled from QB and pre-loaded. Update the projected sale price and total cost budget below. The QB balance shown on the project dashboard reflects actual costs to date.</p>
+    <div id="budget-editor"></div>
+  </div>
+</div>
+
+<!-- PIN MODAL -->
+<div class="modal-overlay" id="pin-modal" style="display:none;">
+  <div class="modal">
+    <h2>Admin Access</h2>
+    <p>Enter your admin PIN</p>
+    <div class="pin-display" id="pin-display"></div>
+    <div class="pin-pad">
+      <button class="pin-btn" onclick="pinPress('1')">1</button>
+      <button class="pin-btn" onclick="pinPress('2')">2</button>
+      <button class="pin-btn" onclick="pinPress('3')">3</button>
+      <button class="pin-btn" onclick="pinPress('4')">4</button>
+      <button class="pin-btn" onclick="pinPress('5')">5</button>
+      <button class="pin-btn" onclick="pinPress('6')">6</button>
+      <button class="pin-btn" onclick="pinPress('7')">7</button>
+      <button class="pin-btn" onclick="pinPress('8')">8</button>
+      <button class="pin-btn" onclick="pinPress('9')">9</button>
+      <button class="pin-btn" onclick="pinPress('C')" style="color:var(--red);">C</button>
+      <button class="pin-btn" onclick="pinPress('0')">0</button>
+      <button class="pin-btn" onclick="pinPress('DEL')" style="font-size:0.75rem;">⌫</button>
+    </div>
+    <div class="pin-error" id="pin-error"></div>
+    <button class="btn btn-secondary" style="width:100%;margin-top:8px;" onclick="closePinModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- ADD EMPLOYEE MODAL -->
+<div class="modal-overlay" id="emp-modal" style="display:none;">
+  <div class="modal" style="width:340px;">
+    <h2>Add Employee</h2>
+    <p>Set name, PIN, and hourly rate</p>
+    <input class="emp-input" id="emp-name" type="text" placeholder="Full Name" autocomplete="off">
+    <input class="emp-input" id="emp-pin-field" type="password" placeholder="PIN (4–6 digits)" maxlength="6" autocomplete="off">
+    <input class="emp-input" id="emp-rate" type="number" placeholder="Hourly Rate (e.g. 22.00)" min="0" step="0.01">
+    <div style="display:flex;gap:8px;margin-top:4px;">
+      <button class="btn btn-primary" style="flex:1;" onclick="saveEmployee()">Save</button>
+      <button class="btn btn-secondary" style="flex:1;" onclick="document.getElementById('emp-modal').style.display='none'">Cancel</button>
+    </div>
+    <div class="pin-error" id="emp-error"></div>
+  </div>
+</div>
+
+<!-- QB SYNC MODAL -->
+<div class="modal-overlay" id="sync-modal" style="display:none;">
+  <div class="modal" style="width:380px;text-align:left;">
+    <h2 style="margin-bottom:12px;">Sync from QuickBooks</h2>
+    <p style="color:var(--text-muted);font-size:0.83rem;margin-bottom:12px;">Current QB Inventory Asset balances (as of today):</p>
+    <div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:14px;font-size:0.88rem;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+        <span>330 Roddy Branch</span><strong style="color:var(--gold);">$420,669.44</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span>326 Roddy Branch</span><strong style="color:var(--gold);">$96,088.10</strong>
+      </div>
+    </div>
+    <p style="color:var(--text-muted);font-size:0.83rem;margin-bottom:10px;">To update with the latest QB figures, go to <strong style="color:var(--text);">Admin → Budget / Cost Data</strong> and enter the current Inventory Asset balance from QB's Balance Sheet report.</p>
+    <p style="color:var(--text-muted);font-size:0.78rem;">For fully automatic live sync, a server-side QB integration can be added later.</p>
+    <button class="btn btn-primary" style="width:100%;margin-top:18px;" onclick="document.getElementById('sync-modal').style.display='none'">Got It</button>
+  </div>
+</div>
+
+<script>
+// ─── STORAGE ───────────────────────────────────────────────────
+const S = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem('fd_' + k)) ?? d; } catch { return d; } },
+  set(k, v) { localStorage.setItem('fd_' + k, JSON.stringify(v)); }
+};
+const getAdminPin = () => S.get('admin_pin', '1234');
+
+// ─── QB REAL DATA (from balance sheet pulled 2026-06-04) ────────
+const QB_INVENTORY = {
+  '330': { balance: 420669.44, account: 'Inventory Asset:330 Roddy Branch', lastSync: '2026-06-04' },
+  '326': { balance: 96088.10,  account: 'Inventory Asset:326 Roddy Branch', lastSync: '2026-06-04' }
+};
+
+// ─── PLAN DATA (extracted from Laurelwood plans) ─────────────
+const PLAN_DATA = {
+  '330': {
+    name: '330 Roddy Branch Rd',
+    plan: 'Laurelwood – Left Garage',
+    address: '330 Roddy Branch Rd, Rockford, TN 37853',
+    mls: '#1343220',
+    listPrice: 775000,
+    daysOnMarket: 1,
+    sqft1st: 2267, sqft2nd: 502, sqftGarage: 686,
+    sqftTotal: 2769,
+    beds: 4, baths: 3,
+    lot: '0.68 acres',
+    yearBuilt: 2026,
+    stories: '1.5',
+    listingDesc: 'Beautiful new construction home on .68 acres in a quiet, private setting with a creek bordering the backyard. 4 bed / 3 bath. Open-concept layout with large kitchen island, butler\'s pantry, solid surface countertops, tile backsplash. Custom wood-burning fireplace with accent wall. White oak LVP throughout. Primary suite with walk-in tile shower. 4th bed + full bath upstairs. Huge unfinished walk-in crawlspace. Side-entry garage. LP Smart Side siding.',
+    features: ['4th Bed + Full Bath Upstairs','White Oak LVP Throughout','Custom Wood-Burning Fireplace','Solid Surface Countertops','Tile Backsplash','10\' Raised Ceiling – Great Room','Tray Ceiling – Master Bedroom','Walk-In Tile Shower – Primary','Covered Front & Back Porch','Back Porch off Primary Bedroom','10\'×8\' Pella Lifestyle 4-Panel Slider','Side-Entry Garage (Left)','LP Smart Side Siding','Brick Veneer / Watertable','Crawlspace – Walk-In Storage','Creek Bordering Backyard','0.68 Acres · No HOA'],
+    budget: {
+      'Land & Site Prep':        { projected: 45000,  note: 'Lot, permits, excavation, crawlspace' },
+      'Foundation (Crawlspace)': { projected: 28000,  note: 'Footings, block, waterproofing' },
+      'Framing & Engineering':   { projected: 72000,  note: 'Materials, trusses, engineered lumber, labor' },
+      'Roofing':                 { projected: 22000,  note: 'Architectural shingles, 7:12 pitch complex roof' },
+      'Windows & Ext. Doors':    { projected: 48000,  note: '26 windows + 3 ext. doors incl. Pella 10×8 slider ($8K)' },
+      'Exterior – LP Smart Side/Brick': { projected: 48000, note: 'Brick veneer, LP Smart Side siding (B&B + lap), trim' },
+      'Fireplace & Accent Wall': { projected: 6500,   note: 'Custom wood-burning fireplace + accent wall (confirmed in listing)' },
+      'Garage Door (18×8)':      { projected: 3500,   note: 'Flush panel 18\'×8\' OH door' },
+      'Rough Plumbing':          { projected: 14000,  note: '3 full baths + laundry + kitchen' },
+      'Rough Electrical':        { projected: 13000,  note: 'Panel, rough wiring, 2,769 sqft' },
+      'HVAC (2 Zones)':          { projected: 24000,  note: 'Two-zone system, 2,769 sqft' },
+      'Insulation':              { projected: 11000,  note: 'Crawl + walls + attic, 2×6 exterior walls' },
+      'Drywall':                 { projected: 23000,  note: 'Hang, tape, float, texture — 2,769 sqft' },
+      'Paint – Interior':        { projected: 16000,  note: 'Prime + 2 coats, all rooms' },
+      'Flooring':                { projected: 28000,  note: 'LVP (main), carpet (beds/bonus), tile (baths/laundry)' },
+      'Cabinets':                { projected: 28000,  note: 'Kitchen + 3 baths, semi-custom mid-range' },
+      'Countertops':             { projected: 12000,  note: 'Granite/quartz kitchen + 3 baths' },
+      'Trim, Int. Doors & HW':   { projected: 22000,  note: 'All casing, base, interior doors, hardware' },
+      'Plumbing Fixtures':       { projected: 10000,  note: '3 baths + kitchen + laundry fixtures' },
+      'Light Fixtures & Elec. Finish': { projected: 8000, note: 'Fixtures, outlets, switches' },
+      'Appliances':              { projected: 7000,   note: 'Range, DW, microhood, fridge allowance' },
+      'Concrete – Drive/Porch':  { projected: 16000,  note: 'Driveway, front porch, back deck pad' },
+      'Landscaping & Grading':   { projected: 12000,  note: 'Final grade, seed/sod, minimal landscaping' },
+      'Contingency (5%)':        { projected: 25000,  note: '~5% buffer on total projected costs' },
+    },
+    projectedSalePrice: 775000,
+    compNotes: 'Listed at $775,000 ($279/sqft). Reflects new construction quality, finish level, lot value, and 3/3 with bonus room. Same-road resale comp (515 Roddy Branch, 1,596sqft 3/2, $285K Dec 2024) is not comparable in size or quality.'
+  },
+  '326': {
+    name: '326 Roddy Branch',
+    plan: 'Laurelwood – Right Garage',
+    address: '326 Roddy Branch Rd, Rockford, TN 37853',
+    sqft1st: 2288, sqft2nd: 508, sqftGarage: 680,
+    sqftTotal: 2796,
+    beds: 3, baths: 3,
+    stories: '1.5',
+    features: ['Bonus Room + Full Bath (2nd Floor)','9\' Ceilings Throughout','10\' Raised Ceiling – Great Room','Optional Tray Ceiling – Master','Covered Front Porch','Covered Back Deck','10\'×8\' Pella Lifestyle 4-Panel Slider','Dormer (2nd Floor)','Side-Entry Garage (Right)','Brick Veneer / Watertable','Board & Batten + Lap Siding','T&G Porch Ceiling','Crawlspace Foundation','9:12 Roof Pitch (Steeper)'],
+    budget: {
+      'Land & Site Prep':          { projected: 45000,  note: 'Lot, permits, excavation, crawlspace' },
+      'Foundation (Crawlspace)':   { projected: 28000,  note: 'Footings, block, waterproofing' },
+      'Framing & Engineering':     { projected: 75000,  note: 'Materials, trusses, engineered lumber, labor (complex roof)' },
+      'Roofing':                   { projected: 26000,  note: 'Architectural shingles, 9:12 steep pitch + dormer complexity' },
+      'Windows & Ext. Doors':      { projected: 49000,  note: '23 windows + 3 ext. doors incl. Pella 10×8 slider ($8K)' },
+      'Exterior – Siding/Brick':   { projected: 48000,  note: 'Brick veneer, board & batten, lap siding, T&G porch ceiling' },
+      'Garage Door (18×8)':        { projected: 3500,   note: 'Flush panel 18\'×8\' OH door' },
+      'Rough Plumbing':            { projected: 14500,  note: '3 full baths + laundry + kitchen' },
+      'Rough Electrical':          { projected: 13500,  note: 'Panel, rough wiring, 2,796 sqft' },
+      'HVAC (2 Zones)':            { projected: 25000,  note: 'Two-zone system, 2,796 sqft' },
+      'Insulation':                { projected: 11500,  note: 'Crawl + walls + attic/dormer, 2×6 exterior walls' },
+      'Drywall':                   { projected: 24000,  note: 'Hang, tape, float, texture — 2,796 sqft + dormer' },
+      'Paint – Interior':          { projected: 16500,  note: 'Prime + 2 coats, all rooms' },
+      'Flooring':                  { projected: 28500,  note: 'LVP (main), carpet (beds/bonus), tile (baths/laundry)' },
+      'Cabinets':                  { projected: 28000,  note: 'Kitchen + 3 baths, semi-custom mid-range' },
+      'Countertops':               { projected: 12000,  note: 'Granite/quartz kitchen + 3 baths' },
+      'Trim, Int. Doors & HW':     { projected: 22000,  note: 'All casing, base, interior doors, hardware' },
+      'Plumbing Fixtures':         { projected: 10000,  note: '3 baths + kitchen + laundry fixtures' },
+      'Light Fixtures & Elec. Finish': { projected: 8000, note: 'Fixtures, outlets, switches' },
+      'Appliances':                { projected: 7000,   note: 'Range, DW, microhood, fridge allowance' },
+      'Concrete – Drive/Porch':    { projected: 16000,  note: 'Driveway, front porch, back deck pad' },
+      'Landscaping & Grading':     { projected: 12000,  note: 'Final grade, seed/sod, minimal landscaping' },
+      'Contingency (5%)':          { projected: 26000,  note: '~5% buffer — steeper roof and dormer add risk' },
+    },
+    projectedSalePrice: 775000,
+    compNotes: 'Listed at $775,000 ($277/sqft). MLS comp analysis supports this price point. Mirrored plan of 330 — right-entry garage, dormer, 2,796sqft 3/3 with full bonus bath upstairs.'
+  }
+};
+
+// ─── CONSTRUCTION STAGES ───────────────────────────────────────
+const STAGES = [
+  'Site Prep & Permits','Foundation Poured','Foundation Complete',
+  'Framing Started','Framing Complete','Roof Sheathing','Roof Complete',
+  'Windows & Doors Installed','Rough Plumbing','Rough Electrical','Rough HVAC',
+  'Insulation','Drywall Started','Drywall Hung','Drywall Taped','Drywall Complete',
+  'Paint – Prime Coat','Paint – Color Coat','Cabinets Delivered','Cabinets Installed',
+  'Countertops Templated','Countertops Installed','Flooring Started','Flooring Complete',
+  'Trim & Interior Doors','Fixtures & Hardware','Final Plumbing','Final Electrical',
+  'Final HVAC','Landscaping','Final Inspections','Certificate of Occupancy',
+  'Punch List','Project Complete'
+];
+
+function cycleStage(project, idx) {
+  const stages = S.get('stages_' + project, {});
+  const cur = stages[idx] || 'none';
+  stages[idx] = cur === 'none' ? 'in-progress' : cur === 'in-progress' ? 'complete' : 'none';
+  S.set('stages_' + project, stages);
+  renderStages(project);
+}
+
+function renderStages(project) {
+  const stages = S.get('stages_' + project, {});
+  const container = document.getElementById('stages-' + project);
+  if (!container) return;
+  let done = 0, wip = 0;
+  container.innerHTML = STAGES.map((name, i) => {
+    const s = stages[i] || 'none';
+    if (s === 'complete')    done++;
+    if (s === 'in-progress') wip++;
+    const icon  = s === 'complete' ? '✓' : s === 'in-progress' ? '●' : '';
+    const label = s === 'complete' ? 'Complete' : s === 'in-progress' ? 'In Progress' : '';
+    return `<div class="stage-item ${s}" onclick="cycleStage('${project}',${i})" title="Click to cycle status">
+      <div class="stage-dot">${icon}</div>
+      <div class="stage-name">${name}</div>
+      ${label ? `<span class="stage-badge">${label}</span>` : ''}
+    </div>`;
+  }).join('');
+  const badge = document.getElementById('stage-badge-' + project);
+  if (badge) {
+    badge.textContent = `${done}/${STAGES.length} Complete`;
+    badge.className = done === STAGES.length ? 'badge badge-green' : wip > 0 ? 'badge badge-gold' : 'badge badge-gray';
+  }
+}
+
+// ─── BUDGET ────────────────────────────────────────────────────
+function getDefaultBudget(p) {
+  const plan = PLAN_DATA[p];
+  const totalProjected = plan ? Object.values(plan.budget).reduce((s, v) => s + v.projected, 0) : 0;
+  return {
+    qbBalance: QB_INVENTORY[p].balance,
+    totalBudget: totalProjected,
+    projectedSalePrice: plan?.projectedSalePrice || 0,
+    lastSync: QB_INVENTORY[p].lastSync
+  };
+}
+
+function renderBudget(project) {
+  const stored = S.get('budget_' + project, null);
+  const b = stored || getDefaultBudget(project);
+  const qb = b.qbBalance || QB_INVENTORY[project].balance;
+  const budget = b.totalBudget || 0;
+  const salePrice = b.projectedSalePrice || 0;
+  const projectedProfit = salePrice - budget;
+  const costRemaining = budget - qb;
+  const pct = budget > 0 ? Math.min(120, Math.round(qb / budget * 100)) : 0;
+  const over = pct > 100;
+
+  document.getElementById('budget-' + project).innerHTML = `
+    <div class="card">
+      <div class="section-header">
+        <div class="card-title">Budget Snapshot</div>
+        <span class="qb-live">● QB Live</span>
+      </div>
+      <div class="budget-grid">
+        <div class="budget-item">
+          <div class="b-label">QB Costs to Date</div>
+          <div class="b-value red">${fmt(qb)}</div>
+          <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px;">Inventory Asset</div>
+        </div>
+        <div class="budget-item">
+          <div class="b-label">Total Cost Budget</div>
+          <div class="b-value">${budget ? fmt(budget) : '—'}</div>
+          <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px;">From plan estimate</div>
+        </div>
+        <div class="budget-item">
+          <div class="b-label">Cost Remaining</div>
+          <div class="b-value ${costRemaining >= 0 ? 'green' : 'red'}">${budget ? fmt(costRemaining) : '—'}</div>
+        </div>
+        <div class="budget-item">
+          <div class="b-label">Projected Sale Price</div>
+          <div class="b-value gold">${salePrice ? fmt(salePrice) : '—'}</div>
+        </div>
+        <div class="budget-item">
+          <div class="b-label">Projected Profit</div>
+          <div class="b-value ${projectedProfit >= 0 ? 'green' : 'red'}">${(salePrice && budget) ? fmt(projectedProfit) : '—'}</div>
+        </div>
+      </div>
+      ${budget ? `<div class="progress-bar"><div class="progress-fill ${over ? 'over' : ''}" style="width:${Math.min(100,pct)}%"></div></div>
+      <div class="progress-label"><span>Cost Burn</span><span style="color:${over?'var(--red)':'var(--text-muted)'};">${pct}%${over?' — OVER BUDGET':''}</span></div>` : ''}
+    </div>`;
+}
+
+const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0 });
+
+// ─── TIME LOG ──────────────────────────────────────────────────
+function getEmployees() { return S.get('employees', []); }
+
+function onEmployeeChange() {
+  const name = document.getElementById('tl-employee').value;
+  const emp = getEmployees().find(e => e.name === name);
+  if (emp && emp.hourlyRate) {
+    document.getElementById('tl-rate').value = emp.hourlyRate;
+  }
+  renderMyEntries();
+}
+
+function refreshEmployeeSelects() {
+  const emps = getEmployees();
+  const opts = emps.map(e => `<option value="${esc(e.name)}">${e.name}</option>`).join('');
+  const tlEmp = document.getElementById('tl-employee');
+  if (tlEmp) { const v = tlEmp.value; tlEmp.innerHTML = '<option value="">Select Employee…</option>' + opts; tlEmp.value = v; }
+  const fe = document.getElementById('filter-employee');
+  if (fe) { const v = fe.value; fe.innerHTML = '<option value="">All Employees</option>' + opts; fe.value = v; }
+}
+
+function submitTimeLog() {
+  const emp  = document.getElementById('tl-employee').value.trim();
+  const pin  = document.getElementById('tl-pin').value.trim();
+  const date = document.getElementById('tl-date').value;
+  const proj = document.getElementById('tl-project').value;
+  const st   = document.getElementById('tl-start').value;
+  const en   = document.getElementById('tl-end').value;
+  const rate = parseFloat(document.getElementById('tl-rate').value) || 0;
+  const desc = document.getElementById('tl-desc').value.trim();
+
+  if (!emp || !pin || !date || !st || !en) { toast('Please fill in all required fields.', 'error'); return; }
+  if (rate <= 0) { toast('Please enter an hourly rate.', 'error'); return; }
+
+  const employee = getEmployees().find(e => e.name === emp);
+  if (!employee || employee.pin !== pin) { toast('Incorrect PIN — please try again.', 'error'); return; }
+
+  const [sh,sm] = st.split(':').map(Number);
+  const [eh,em] = en.split(':').map(Number);
+  const hours = ((eh*60+em) - (sh*60+sm)) / 60;
+  if (hours <= 0) { toast('End time must be after start time.', 'error'); return; }
+
+  const amount = Math.round(hours * rate * 100) / 100;
+  const entry = {
+    id: Date.now(),
+    employee: emp,
+    date,
+    project: proj,
+    startTime: st,
+    endTime: en,
+    hours: Math.round(hours * 100) / 100,
+    hourlyRate: rate,
+    amount,
+    description: desc
+  };
+  const logs = S.get('timelogs', []);
+  logs.push(entry);
+  S.set('timelogs', logs);
+
+  document.getElementById('tl-start').value   = '';
+  document.getElementById('tl-end').value     = '';
+  document.getElementById('tl-desc').value    = '';
+  document.getElementById('tl-pin').value     = '';
+
+  toast(`✓ ${hours.toFixed(2)} hrs / ${fmt(amount)} logged for ${emp}`);
+  renderMyEntries();
+}
+
+function renderMyEntries() {
+  const emp = document.getElementById('tl-employee')?.value;
+  const container = document.getElementById('tl-my-entries');
+  if (!container) return;
+  if (!emp) { container.innerHTML = '<div class="empty-state">Select your name above.</div>'; return; }
+  const logs = S.get('timelogs', []).filter(l => l.employee === emp).slice(-15).reverse();
+  if (!logs.length) { container.innerHTML = `<div class="empty-state">No entries yet for ${emp}.</div>`; return; }
+  const totalHrs = logs.reduce((s,l) => s+l.hours, 0);
+  const totalAmt = logs.reduce((s,l) => s+(l.amount||0), 0);
+  container.innerHTML = `
+    <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px;">Last ${logs.length} entries · <strong style="color:var(--gold);">${totalHrs.toFixed(2)} hrs / ${fmt(totalAmt)}</strong></div>
+    <div class="table-wrap"><table class="data-table">
+      <thead><tr><th>Date</th><th>Project</th><th>Hrs</th><th>Rate</th><th>Amount</th><th>Description</th></tr></thead>
+      <tbody>${logs.map(l=>`<tr>
+        <td>${l.date}</td><td>${l.project}</td>
+        <td><strong>${l.hours.toFixed(2)}</strong></td>
+        <td>$${(l.hourlyRate||0).toFixed(2)}</td>
+        <td><strong>${fmt(l.amount||0)}</strong></td>
+        <td>${l.description||'—'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+}
+
+// ─── ADMIN ENTRIES ─────────────────────────────────────────────
+function renderAdminEntries() {
+  const pf = document.getElementById('filter-project')?.value  || '';
+  const ef = document.getElementById('filter-employee')?.value || '';
+  const wf = document.getElementById('filter-week')?.value     || '';
+  let logs = S.get('timelogs', []);
+  if (pf) logs = logs.filter(l => l.project  === pf);
+  if (ef) logs = logs.filter(l => l.employee === ef);
+  if (wf) {
+    const [yr, wkStr] = wf.split('-W');
+    const wk = parseInt(wkStr);
+    logs = logs.filter(l => { const d = new Date(l.date); return d.getFullYear() === +yr && isoWeek(d) === wk; });
+  }
+  logs = logs.slice().reverse();
+  const container = document.getElementById('admin-entries-table');
+  if (!container) return;
+  if (!logs.length) { container.innerHTML = '<div class="empty-state">No entries match filters.</div>'; return; }
+  const totalHrs = logs.reduce((s,l) => s+l.hours, 0);
+  const totalAmt = logs.reduce((s,l) => s+(l.amount||0), 0);
+  const byEmp = {};
+  logs.forEach(l => { byEmp[l.employee] = (byEmp[l.employee]||0) + l.hours; });
+  const summary = Object.entries(byEmp).map(([n,h]) =>
+    `<span class="badge badge-gold" style="margin-right:6px;">${n}: ${h.toFixed(2)} hrs</span>`).join('');
+  container.innerHTML = `
+    <div style="margin-bottom:14px;">${summary}
+      <span style="font-size:0.8rem;color:var(--text-muted);">Total: <strong style="color:var(--text);">${totalHrs.toFixed(2)} hrs · ${fmt(totalAmt)}</strong></span>
+    </div>
+    <div class="table-wrap"><table class="data-table">
+      <thead><tr><th>Date</th><th>Employee</th><th>Project</th><th>Hrs</th><th>Rate</th><th>Amount</th><th>Start</th><th>End</th><th>Description</th><th></th></tr></thead>
+      <tbody>${logs.map(l=>`<tr>
+        <td>${l.date}</td><td>${l.employee}</td><td>${l.project}</td>
+        <td><strong>${l.hours.toFixed(2)}</strong></td>
+        <td>$${(l.hourlyRate||0).toFixed(2)}</td>
+        <td><strong>${fmt(l.amount||0)}</strong></td>
+        <td>${l.startTime}</td><td>${l.endTime}</td>
+        <td>${l.description||'—'}</td>
+        <td><button onclick="deleteEntry(${l.id})" class="btn btn-danger btn-sm">✕</button></td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+}
+
+function deleteEntry(id) {
+  if (!confirm('Delete this time entry?')) return;
+  S.set('timelogs', S.get('timelogs',[]).filter(l=>l.id!==id));
+  renderAdminEntries();
+  toast('Entry deleted.');
+}
+
+function isoWeek(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay()||7));
+  return Math.ceil((((d - new Date(Date.UTC(d.getUTCFullYear(),0,1)))/86400000)+1)/7);
+}
+
+// ─── QB JOURNAL ENTRY CSV EXPORT ──────────────────────────────
+// Format matches QB Online Journal Entry import:
+// JournalNo, Journal date, Currency, Account, Debits (USD), Credits (USD), Description, Name, Location, Class
+// Each time entry = 2 rows (debit + credit)
+// Debit:  Inventory Asset:[project sub-account]
+// Credit: 6901 Wages
+function exportJournalCSV() {
+  const pf = document.getElementById('filter-project')?.value  || '';
+  const ef = document.getElementById('filter-employee')?.value || '';
+  const wf = document.getElementById('filter-week')?.value     || '';
+  let logs = S.get('timelogs', []);
+  if (pf) logs = logs.filter(l => l.project === pf);
+  if (ef) logs = logs.filter(l => l.employee === ef);
+  if (wf) {
+    const [yr, wkStr] = wf.split('-W');
+    const wk = parseInt(wkStr);
+    logs = logs.filter(l => { const d = new Date(l.date); return d.getFullYear() === +yr && isoWeek(d) === wk; });
+  }
+  if (!logs.length) { toast('No entries to export.', 'error'); return; }
+
+  const header = ['JournalNo','Journal date','Currency','Account','Debits (USD)','Credits (USD)','Description','Name','Location','Class'];
+  const rows = [];
+  let jNo = 1;
+
+  // Group by date+employee+project for one JE per entry
+  logs.forEach(l => {
+    const inventoryAcct = l.project === '330 Roddy Branch'
+      ? 'Inventory Asset:330 Roddy Branch'
+      : 'Inventory Asset:326 Roddy Branch';
+    const amount  = (l.amount || (l.hours * (l.hourlyRate||0))).toFixed(2);
+    const desc    = l.description ? `${l.description} (${l.hours.toFixed(2)} hrs @ $${(l.hourlyRate||0).toFixed(2)}/hr)` : `Labor ${l.hours.toFixed(2)} hrs @ $${(l.hourlyRate||0).toFixed(2)}/hr`;
+    // Debit line — capitalize labor into Inventory Asset
+    rows.push([jNo, l.date, 'USD', csvQ(inventoryAcct), amount, '', csvQ(desc), csvQ(l.employee), '', ''].join(','));
+    // Credit line — record wage expense
+    rows.push([jNo, l.date, 'USD', '6901 Wages', '', amount, csvQ(desc), csvQ(l.employee), '', ''].join(','));
+    jNo++;
+  });
+
+  const csv  = [header.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `FalconDev_JournalEntries_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`Exported ${logs.length} journal entries (${logs.length*2} rows).`);
+}
+
+const csvQ = s => `"${String(s).replace(/"/g,'""')}"`;
+
+// ─── EMPLOYEES ─────────────────────────────────────────────────
+function showAddEmployee() {
+  document.getElementById('emp-name').value = '';
+  document.getElementById('emp-pin-field').value = '';
+  document.getElementById('emp-rate').value = '';
+  document.getElementById('emp-error').textContent = '';
+  document.getElementById('emp-modal').style.display = 'flex';
+}
+
+function saveEmployee() {
+  const name = document.getElementById('emp-name').value.trim();
+  const pin  = document.getElementById('emp-pin-field').value.trim();
+  const rate = parseFloat(document.getElementById('emp-rate').value) || 0;
+  const err  = document.getElementById('emp-error');
+  if (!name)               { err.textContent = 'Name is required.'; return; }
+  if (!/^\d{4,6}$/.test(pin)) { err.textContent = 'PIN must be 4–6 digits.'; return; }
+  const emps = getEmployees();
+  if (emps.find(e => e.name.toLowerCase() === name.toLowerCase())) { err.textContent = 'Employee already exists.'; return; }
+  emps.push({ name, pin, hourlyRate: rate });
+  S.set('employees', emps);
+  document.getElementById('emp-modal').style.display = 'none';
+  refreshEmployeeSelects();
+  renderEmployeeList();
+  toast(`${name} added.`);
+}
+
+function renderEmployeeList() {
+  const container = document.getElementById('employee-list');
+  if (!container) return;
+  const emps = getEmployees();
+  if (!emps.length) { container.innerHTML = '<div class="empty-state">No employees yet. Click "+ Add Employee" above.</div>'; return; }
+  container.innerHTML = `<div class="table-wrap"><table class="data-table">
+    <thead><tr><th>Name</th><th>Hourly Rate</th><th>PIN</th><th></th></tr></thead>
+    <tbody>${emps.map((e,i)=>`<tr>
+      <td>${e.name}</td>
+      <td>${e.hourlyRate ? fmt(e.hourlyRate)+'/hr' : '—'}</td>
+      <td><span style="letter-spacing:4px;color:var(--text-muted);">••••</span></td>
+      <td><button onclick="removeEmployee(${i})" class="btn btn-danger btn-sm">Remove</button></td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+function removeEmployee(idx) {
+  if (!confirm('Remove this employee?')) return;
+  const emps = getEmployees(); emps.splice(idx,1); S.set('employees',emps);
+  refreshEmployeeSelects(); renderEmployeeList(); toast('Employee removed.');
+}
+
+// ─── PROJECT DETAIL (specs, budget breakdown, comps) ──────────
+function renderProjectDetail(project) {
+  const container = document.getElementById('projdetail-' + project);
+  if (!container) return;
+  const p = PLAN_DATA[project];
+  if (!p || !p.sqftTotal) { container.innerHTML = ''; return; }
+
+  const qbSpent = QB_INVENTORY[project].balance;
+  const budgetEntries = Object.entries(p.budget);
+  const totalProjected = budgetEntries.reduce((s, [, v]) => s + v.projected, 0);
+  const remaining = totalProjected - qbSpent;
+  const projProfit = p.projectedSalePrice - totalProjected;
+  const margin = totalProjected > 0 ? (projProfit / p.projectedSalePrice * 100).toFixed(1) : 0;
+  const ppsf = p.sqftTotal > 0 ? (p.projectedSalePrice / p.sqftTotal).toFixed(0) : 0;
+
+  // Stored overrides from admin
+  const stored = S.get('budget_' + project, null);
+  const saleOverride = stored?.projectedSalePrice || 0;
+  const displaySale = saleOverride || p.projectedSalePrice;
+  const displayProfit = displaySale - totalProjected;
+  const displayMargin = displaySale > 0 ? (displayProfit / displaySale * 100).toFixed(1) : 0;
+
+  container.innerHTML = `
+    <div class="card">
+      <div class="section-header">
+        <div class="card-title">Plan Specs — ${p.plan}</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          ${p.mls ? `<span style="font-size:0.72rem;background:rgba(93,179,228,0.15);color:var(--blue);padding:2px 8px;border-radius:4px;font-weight:600;">MLS ${p.mls}</span>` : ''}
+          ${p.daysOnMarket !== undefined ? `<span style="font-size:0.72rem;color:var(--blue);font-weight:600;">● Listed ${p.daysOnMarket === 0 ? 'today' : p.daysOnMarket + ' day' + (p.daysOnMarket === 1 ? '' : 's') + ' ago'}</span>` : ''}
+          <span style="font-size:0.72rem;color:var(--text-muted);">${p.address}</span>
+        </div>
+      </div>
+      ${p.listingDesc ? `<div style="background:var(--surface2);border-left:3px solid var(--gold);border-radius:0 6px 6px 0;padding:12px 14px;font-size:0.82rem;color:var(--text-muted);line-height:1.6;margin-bottom:14px;">${p.listingDesc}</div>` : ''}
+      <div class="spec-grid">
+        <div class="spec-item"><div class="s-val">${p.sqftTotal.toLocaleString()}</div><div class="s-lbl">Finished sqft</div></div>
+        <div class="spec-item"><div class="s-val">${p.sqftGarage}</div><div class="s-lbl">Garage sqft</div></div>
+        <div class="spec-item"><div class="s-val">${p.beds}</div><div class="s-lbl">Bedrooms</div></div>
+        <div class="spec-item"><div class="s-val">${p.baths}</div><div class="s-lbl">Full Baths</div></div>
+        <div class="spec-item"><div class="s-val">${p.lot || '—'}</div><div class="s-lbl">Lot Size</div></div>
+        <div class="spec-item"><div class="s-val">${p.yearBuilt || '2026'}</div><div class="s-lbl">Year Built</div></div>
+        <div class="spec-item"><div class="s-val">$${ppsf}</div><div class="s-lbl">$/sqft</div></div>
+      </div>
+      <div class="features-list">${p.features.map(f => `<span class="feat-tag">${f}</span>`).join('')}</div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Projected Budget — Line by Line</div>
+        <div class="table-wrap">
+          <table class="budget-line-table">
+            <thead><tr><th>Category</th><th style="text-align:right;">Projected</th><th>Notes</th></tr></thead>
+            <tbody>
+              ${budgetEntries.map(([cat, v]) => `<tr>
+                <td>${cat}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums;">${fmt(v.projected)}</td>
+                <td style="color:var(--text-muted);font-size:0.78rem;">${v.note}</td>
+              </tr>`).join('')}
+              <tr class="total-row">
+                <td>TOTAL PROJECTED COST</td>
+                <td style="text-align:right;">${fmt(totalProjected)}</td>
+                <td></td>
+              </tr>
+              <tr class="spent-row">
+                <td>QB Spent to Date</td>
+                <td style="text-align:right;">(${fmt(qbSpent)})</td>
+                <td style="color:var(--text-muted);font-size:0.78rem;">Inventory Asset balance</td>
+              </tr>
+              <tr class="remain-row">
+                <td>Remaining to Spend</td>
+                <td style="text-align:right;color:${remaining>=0?'var(--green)':'var(--red)'};">${remaining>=0?fmt(remaining):'OVER '+fmt(Math.abs(remaining))}</td>
+                <td style="color:var(--text-muted);font-size:0.78rem;">${remaining>=0?'Estimated budget left':'Over projected budget'}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Comparable Sales &amp; Pricing</div>
+        <div class="comp-box">
+          <strong>Market: Rockford / Blount County, TN</strong><br>
+          <div style="margin-top:10px;display:grid;gap:8px;">
+            <div style="background:var(--surface);border-radius:6px;padding:10px;">
+              <div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">Direct Comp — Same Road</div>
+              <strong style="color:var(--text);">515 Roddy Branch Rd</strong><br>
+              1,596 sqft · 3bd/2ba · Nearly-new<br>
+              Sold <strong style="color:var(--gold);">$285,000</strong> · Dec 2024 · $178/sqft
+            </div>
+            <div style="background:var(--surface);border-radius:6px;padding:10px;">
+              <div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">Rockford 37853 Market</div>
+              Avg price/sqft: <strong style="color:var(--text);">$208</strong><br>
+              Median home price: <strong style="color:var(--text);">$372,500</strong>
+            </div>
+            <div style="background:var(--surface);border-radius:6px;padding:10px;">
+              <div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">Blount County New Construction</div>
+              Median list: <strong style="color:var(--text);">$425K</strong> · $/sqft: <strong style="color:var(--text);">$217–$228</strong><br>
+              Maryville new construction median: <strong style="color:var(--text);">$415K</strong>
+            </div>
+          </div>
+          <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
+            <div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;">Recommended List Price</div>
+            <span class="price-tag">${fmt(displaySale)}</span>
+            <span class="price-range">Conservative: ${fmt(Math.round(displaySale*0.96))} &nbsp;·&nbsp; Optimistic: ${fmt(Math.round(displaySale*1.04))}</span>
+            <div style="margin-top:10px;font-size:0.8rem;">
+              ${fmt(displaySale)} ÷ ${p.sqftTotal.toLocaleString()} sqft = <strong style="color:var(--text);">$${(displaySale/p.sqftTotal).toFixed(0)}/sqft</strong>
+            </div>
+          </div>
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+            <div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;">Projected Profit</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <div style="font-size:1.4rem;font-weight:800;color:${displayProfit>=0?'var(--green)':'var(--red)'};">${fmt(displayProfit)}</div>
+                <div style="font-size:0.78rem;color:var(--text-muted);">Gross margin: ${displayMargin}%</div>
+              </div>
+              <div style="text-align:right;font-size:0.8rem;color:var(--text-muted);">
+                Sale: ${fmt(displaySale)}<br>
+                Cost: (${fmt(totalProjected)})<br>
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:10px;font-size:0.75rem;color:var(--text-muted);font-style:italic;">${p.compNotes}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ─── BUDGET EDITOR ─────────────────────────────────────────────
+function renderBudgetEditor() {
+  const container = document.getElementById('budget-editor');
+  if (!container) return;
+  const projects = [{ k:'330', n:'330 Roddy Branch' }, { k:'326', n:'326 Roddy Branch' }];
+  container.innerHTML = projects.map(p => {
+    const stored = S.get('budget_'+p.k, null);
+    const b = stored || getDefaultBudget(p.k);
+    return `<div style="margin-bottom:20px;">
+      <div style="font-weight:700;color:var(--gold);margin-bottom:10px;">${p.n}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:10px;">
+        <div class="form-group">
+          <label>QB Inventory Asset Balance</label>
+          <input type="number" id="b-${p.k}-qbBalance" value="${b.qbBalance||''}" placeholder="From QB Balance Sheet" min="0">
+        </div>
+        <div class="form-group">
+          <label>Total Cost Budget</label>
+          <input type="number" id="b-${p.k}-totalBudget" value="${b.totalBudget||''}" placeholder="0" min="0">
+        </div>
+        <div class="form-group">
+          <label>Projected Sale Price</label>
+          <input type="number" id="b-${p.k}-projectedSalePrice" value="${b.projectedSalePrice||''}" placeholder="0" min="0">
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="saveBudget('${p.k}','${p.n}')">Save ${p.n}</button>
+    </div><hr class="divider">`;
+  }).join('').replace(/<hr class="divider">$/, '');
+}
+
+function saveBudget(proj, name) {
+  const fields = ['qbBalance','totalBudget','projectedSalePrice'];
+  const b = {};
+  fields.forEach(f => { b[f] = parseFloat(document.getElementById(`b-${proj}-${f}`)?.value)||0; });
+  b.lastSync = new Date().toISOString().slice(0,10);
+  S.set('budget_'+proj, b);
+  renderBudget(proj);
+  toast(`Budget updated for ${name}.`);
+}
+
+// ─── ADMIN PIN ─────────────────────────────────────────────────
+let pinBuf='', pinTarget='admin', adminUnlocked=false;
+
+function requireAdmin(view) {
+  if (adminUnlocked) { switchTab(view); return; }
+  pinTarget=view; pinBuf='';
+  document.getElementById('pin-error').textContent='';
+  updatePinDisplay();
+  document.getElementById('pin-modal').style.display='flex';
+}
+
+function pinPress(k) {
+  document.getElementById('pin-error').textContent='';
+  if (k==='C')   pinBuf='';
+  else if (k==='DEL') pinBuf=pinBuf.slice(0,-1);
+  else if (pinBuf.length<6) pinBuf+=k;
+  updatePinDisplay();
+  const exp = getAdminPin();
+  if (pinBuf.length>=exp.length) {
+    if (pinBuf===exp) { closePinModal(); adminUnlocked=true; switchTab(pinTarget); }
+    else { document.getElementById('pin-error').textContent='Incorrect PIN'; pinBuf=''; updatePinDisplay(); }
+  }
+}
+
+function updatePinDisplay() {
+  const len = getAdminPin().length;
+  document.getElementById('pin-display').textContent =
+    Array.from({length:len},(_,i)=>i<pinBuf.length?'●':'·').join('  ');
+}
+
+function closePinModal() {
+  document.getElementById('pin-modal').style.display='none'; pinBuf='';
+}
+
+function changeAdminPin() {
+  const v = document.getElementById('new-admin-pin').value.trim();
+  if (!/^\d{4,6}$/.test(v)) { toast('PIN must be 4–6 digits.','error'); return; }
+  S.set('admin_pin',v);
+  document.getElementById('new-admin-pin').value='';
+  toast('Admin PIN updated.');
+}
+
+// ─── TABS ──────────────────────────────────────────────────────
+const TAB_IDS = ['p330','p326','timelog','admin'];
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', TAB_IDS[i]===name));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const view = document.getElementById('view-'+name);
+  if (view) view.classList.add('active');
+  if (name==='admin') { renderAdminEntries(); renderBudgetEditor(); renderEmployeeList(); refreshEmployeeSelects(); }
+}
+
+function showSyncHelp() { document.getElementById('sync-modal').style.display='flex'; }
+
+// ─── TOAST ─────────────────────────────────────────────────────
+function toast(msg, type='success') {
+  const t = document.createElement('div');
+  t.className='toast'; t.style.background=type==='error'?'var(--red)':'var(--green)'; t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.style.opacity='0',2600);
+  setTimeout(()=>t.remove(),3000);
+}
+
+const esc = s => String(s).replace(/"/g,'&quot;').replace(/</g,'&lt;');
+
+// ─── SEED QB EMPLOYEES (runs once if employee list is empty) ───
+function seedEmployees() {
+  if (S.get('employees', []).length > 0) return;
+  const qbEmployees = [
+    { name: 'Thomas K. Smith', pin: '1010', hourlyRate: 36.06 },
+    { name: 'Frank Hester',    pin: '1306', hourlyRate: 20.00 }
+  ];
+  S.set('employees', qbEmployees);
+}
+
+// ─── INIT ──────────────────────────────────────────────────────
+function init() {
+  document.getElementById('tl-date').valueAsDate = new Date();
+  seedEmployees();
+  renderStages('330'); renderStages('326');
+  renderBudget('330'); renderBudget('326');
+  renderProjectDetail('330'); renderProjectDetail('326');
+  refreshEmployeeSelects();
+  document.getElementById('sync-status').textContent =
+    'QB sync ' + new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
