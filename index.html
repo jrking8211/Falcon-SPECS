@@ -423,6 +423,7 @@ const PLAN_DATA = {
       'Contingency (5%)':        { projected: 25000,  note: '~5% buffer on total projected costs' },
     },
     projectedSalePrice: 775000,
+    commissionRate: 0.03,
     compNotes: 'Listed at $775,000 ($279/sqft). Reflects new construction quality, finish level, lot value, and 3/3 with bonus room. Same-road resale comp (515 Roddy Branch, 1,596sqft 3/2, $285K Dec 2024) is not comparable in size or quality.'
   },
   '326': {
@@ -460,6 +461,7 @@ const PLAN_DATA = {
       'Contingency (5%)':          { projected: 26000,  note: '~5% buffer — steeper roof and dormer add risk' },
     },
     projectedSalePrice: 775000,
+    commissionRate: 0.03,
     compNotes: 'Listed at $775,000 ($277/sqft). MLS comp analysis supports this price point. Mirrored plan of 330 — right-entry garage, dormer, 2,796sqft 3/3 with full bonus bath upstairs.'
   }
 };
@@ -546,11 +548,13 @@ function renderStages(project) {
 // ─── BUDGET ────────────────────────────────────────────────────
 function getDefaultBudget(p) {
   const plan = PLAN_DATA[p];
-  const totalProjected = plan ? Object.values(plan.budget).reduce((s, v) => s + v.projected, 0) : 0;
+  const budgetLines = plan ? Object.values(plan.budget).reduce((s, v) => s + v.projected, 0) : 0;
+  const salePrice = plan?.projectedSalePrice || 0;
+  const commission = Math.round(salePrice * (plan?.commissionRate || 0.03));
   return {
     qbBalance: QB_INVENTORY[p].balance,
-    totalBudget: totalProjected,
-    projectedSalePrice: plan?.projectedSalePrice || 0,
+    totalBudget: budgetLines + commission,
+    projectedSalePrice: salePrice,
     lastSync: QB_INVENTORY[p].lastSync
   };
 }
@@ -866,17 +870,22 @@ function renderProjectDetail(project) {
 
   const qbSpent = QB_INVENTORY[project].balance;
   const budgetEntries = Object.entries(p.budget);
-  const totalProjected = budgetEntries.reduce((s, [, v]) => s + v.projected, 0);
-  const remaining = totalProjected - qbSpent;
-  const projProfit = p.projectedSalePrice - totalProjected;
-  const margin = totalProjected > 0 ? (projProfit / p.projectedSalePrice * 100).toFixed(1) : 0;
-  const ppsf = p.sqftTotal > 0 ? (p.projectedSalePrice / p.sqftTotal).toFixed(0) : 0;
+  const totalBudgetLines = budgetEntries.reduce((s, [, v]) => s + v.projected, 0);
 
   // Stored overrides from admin
   const stored = S.get('budget_' + project, null);
   const saleOverride = stored?.projectedSalePrice || 0;
   const displaySale = saleOverride || p.projectedSalePrice;
-  const displayProfit = displaySale - totalProjected;
+
+  // Commission calculated dynamically from sale price
+  const commissionRate = p.commissionRate || 0.03;
+  const commission = Math.round(displaySale * commissionRate);
+  const totalProjected = totalBudgetLines + commission;
+
+  const remaining = totalProjected - qbSpent;
+  const projProfit = displaySale - totalProjected;
+  const ppsf = p.sqftTotal > 0 ? (displaySale / p.sqftTotal).toFixed(0) : 0;
+  const displayProfit = projProfit;
   const displayMargin = displaySale > 0 ? (displayProfit / displaySale * 100).toFixed(1) : 0;
 
   container.innerHTML = `
@@ -914,6 +923,11 @@ function renderProjectDetail(project) {
                 <td style="text-align:right;font-variant-numeric:tabular-nums;">${fmt(v.projected)}</td>
                 <td style="color:var(--text-muted);font-size:0.78rem;">${v.note}</td>
               </tr>`).join('')}
+              <tr style="border-top:1px solid var(--border);">
+                <td style="color:var(--text-muted);">Real Estate Commission (${(commissionRate*100).toFixed(0)}%)</td>
+                <td style="text-align:right;color:var(--text-muted);font-variant-numeric:tabular-nums;">${fmt(commission)}</td>
+                <td style="color:var(--text-muted);font-size:0.78rem;">${(commissionRate*100).toFixed(0)}% of ${fmt(displaySale)} sale price</td>
+              </tr>
               <tr class="total-row">
                 <td>TOTAL PROJECTED COST</td>
                 <td style="text-align:right;">${fmt(totalProjected)}</td>
