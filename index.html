@@ -162,6 +162,18 @@
     .upload-progress { height: 4px; background: var(--surface2); border-radius: 2px; margin-top: 10px; overflow: hidden; display: none; }
     .upload-progress-bar { height: 100%; background: var(--gold); border-radius: 2px; transition: width 0.3s; }
 
+    /* ── Phase / Materials / Finishes ── */
+    .mat-status { display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.3px; white-space:nowrap; }
+    .ms-installed   { background:rgba(34,197,94,0.15); color:var(--green); }
+    .ms-on-site     { background:rgba(93,179,228,0.18); color:var(--blue); }
+    .ms-ordered     { background:rgba(245,135,38,0.16); color:var(--orange); }
+    .ms-bid-in      { background:rgba(201,162,39,0.15); color:var(--gold); }
+    .ms-not-ordered { background:rgba(239,68,68,0.15); color:var(--red); }
+    .status-legend { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; font-size:0.72rem; color:var(--text-muted); }
+    .phase-bar-track { background:var(--surface2); border-radius:3px; height:6px; overflow:hidden; margin-top:4px; }
+    .phase-bar-fill { height:100%; border-radius:3px; }
+    .finish-chip { display:inline-block; width:14px; height:14px; border-radius:3px; vertical-align:middle; margin-right:6px; border:1px solid rgba(255,255,255,0.2); }
+
     /* ── Documents ── */
     .doc-upload-zone { border: 2px dashed var(--border); border-radius: 10px; padding: 20px; display: flex; align-items: center; gap: 14px; cursor: pointer; transition: all 0.2s; color: var(--text-muted); font-size: 0.88rem; }
     .doc-upload-zone:hover { border-color: var(--gold); background: rgba(93,179,228,0.06); color: var(--gold); }
@@ -212,6 +224,9 @@
 <div class="view active" id="view-p330">
   <div id="budget-330"></div>
   <div id="projdetail-330"></div>
+  <div id="phasebudget-330"></div>
+  <div id="materials-330"></div>
+  <div id="finishes-330"></div>
   <div class="card">
     <div class="section-header">
       <div class="card-title">Construction Stages</div>
@@ -263,6 +278,9 @@
 <div class="view" id="view-p326">
   <div id="budget-326"></div>
   <div id="projdetail-326"></div>
+  <div id="phasebudget-326"></div>
+  <div id="materials-326"></div>
+  <div id="finishes-326"></div>
   <div class="card">
     <div class="section-header">
       <div class="card-title">Construction Stages</div>
@@ -578,6 +596,13 @@ const PLAN_DATA = {
     lot: '0.68 acres',
     yearBuilt: 2026,
     stories: '1.5',
+    targetCompletion: 'August 31, 2026',
+    snapshotDate: 'May 17, 2026',
+    currentPhase: 'Drywall — hanging starts May 20 (~10 days)',
+    spendToDate: 404068,
+    transactionCount: 166,
+    projectedAllIn: 534000,
+    lotShare: 79880,
     listingDesc: 'Beautiful new construction home on .68 acres in a quiet, private setting with a creek bordering the backyard. 4 bed / 3 bath. Open-concept layout with large kitchen island, butler\'s pantry, solid surface countertops, tile backsplash. Custom wood-burning fireplace with accent wall. White oak LVP throughout. Primary suite with walk-in tile shower. 4th bed + full bath upstairs. Huge unfinished walk-in crawlspace. Side-entry garage. LP Smart Side siding.',
     features: ['4th Bed + Full Bath Upstairs','White Oak LVP Throughout','Custom Wood-Burning Fireplace','Solid Surface Countertops','Tile Backsplash','10\' Raised Ceiling – Great Room','Tray Ceiling – Master Bedroom','Walk-In Tile Shower – Primary','Covered Front & Back Porch','Back Porch off Primary Bedroom','10\'×8\' Pella Lifestyle 4-Panel Slider','Side-Entry Garage (Left)','LP Smart Side Siding','Brick Veneer / Watertable','Crawlspace – Walk-In Storage','Creek Bordering Backyard','0.68 Acres · No HOA'],
     budget: {
@@ -618,6 +643,8 @@ const PLAN_DATA = {
     sqftTotal: 2796,
     beds: 3, baths: 3,
     stories: '1.5',
+    targetCompletion: 'TBD — trails 330 (~Q4 2026)',
+    currentPhase: 'Early stage',
     features: ['Bonus Room + Full Bath (2nd Floor)','9\' Ceilings Throughout','10\' Raised Ceiling – Great Room','Optional Tray Ceiling – Master','Covered Front Porch','Covered Back Deck','10\'×8\' Pella Lifestyle 4-Panel Slider','Dormer (2nd Floor)','Side-Entry Garage (Right)','Brick Veneer / Watertable','Board & Batten + Lap Siding','T&G Porch Ceiling','Crawlspace Foundation','9:12 Roof Pitch (Steeper)'],
     budget: {
       'Land & Site Prep':          { projected: 45000,  note: 'Lot, permits, excavation, crawlspace' },
@@ -648,6 +675,82 @@ const PLAN_DATA = {
     commissionRate: 0.03,
     compNotes: 'Listed at $775,000 ($277/sqft). MLS comp analysis supports this price point. Mirrored plan of 330 — right-entry garage, dormer, 2,796sqft 3/3 with full bonus bath upstairs.'
   }
+};
+
+// ─── PHASE BUDGET vs SPENT (from handoff May 17, 2026) ─────────
+const PHASES = {
+  '330': [
+    { phase: 'Lot Acquired',  spent: 91289.95,  budget: 95000,  status: 'done' },
+    { phase: 'Foundation',    spent: 79369.46,  budget: 50000,  status: 'done', flag: 'over budget ~$29K' },
+    { phase: 'Framing',       spent: 159549.43, budget: 185000, status: 'done' },
+    { phase: 'MEP Rough-in',  spent: 43211.58,  budget: 90000,  status: 'active', flag: 'HVAC final ~$22K still to bill' },
+    { phase: 'Drywall',       spent: 8157.25,   budget: 25000,  status: 'pending', flag: 'starts May 20' },
+    { phase: 'Finishes',      spent: 22490.23,  budget: 80000,  status: 'active', flag: 'many items committed/ordered' },
+    { phase: 'Punch List',    spent: 0,         budget: 10000,  status: 'pending' },
+    { phase: 'Listing / Sale',spent: 0,         budget: 5000,   status: 'pending' },
+  ],
+  '326': []  // same template — data TBD
+};
+
+// ─── MATERIALS STATUS (27 line items, from handoff) ───────────
+// status: not-ordered | bid-in | ordered | on-site | installed
+const MATERIALS = {
+  '330': [
+    { item: 'Drywall materials', vendor: 'Foundation Building Materials', cost: 8157, status: 'on-site', neededBy: '2026-05-20' },
+    { item: 'Interior paint + labor (Est #909)', vendor: 'Universal Painting LLC', cost: 17403, status: 'ordered', neededBy: '2026-06-08' },
+    { item: 'Interior paint colors (SW)', vendor: 'Greek Villa + Extra White', cost: 0, status: 'installed', neededBy: '2026-06-05' },
+    { item: 'Exterior paint colors (SW)', vendor: 'Poolhouse / In the Navy / Accessible Beige / Extra White', cost: 0, status: 'installed', neededBy: '2026-06-20' },
+    { item: 'Exterior paint + labor (siding + trim)', vendor: 'Painter (confirm if Universal)', cost: 8800, status: 'ordered', neededBy: '2026-07-15' },
+    { item: 'Kitchen cabinets', vendor: 'Old City Kitchens', cost: 18305, status: 'ordered', neededBy: '2026-06-08' },
+    { item: 'Bath vanities', vendor: 'TBD', cost: 0, status: 'ordered', neededBy: '2026-06-15' },
+    { item: 'Master bath floor tile (100 SF)', vendor: 'Cella Flooring & Design', cost: 2000, status: 'ordered', neededBy: '2026-06-15' },
+    { item: 'Master shower tile (221 SF custom)', vendor: 'Cella Flooring & Design', cost: 10608, status: 'ordered', neededBy: '2026-06-15' },
+    { item: 'Hall bath floor tile (35 SF)', vendor: 'Cella Flooring & Design', cost: 560, status: 'ordered', neededBy: '2026-06-15' },
+    { item: 'Kitchen backsplash tile', vendor: 'Cella Flooring & Design', cost: 2500, status: 'ordered', neededBy: '2026-06-22' },
+    { item: 'Main level LVP (2,180 SF)', vendor: 'Cella Flooring & Design', cost: 14933, status: 'ordered', neededBy: '2026-06-22' },
+    { item: 'Bonus room + stairs carpet (816 SF)', vendor: 'Cella Flooring & Design', cost: 4122, status: 'ordered', neededBy: '2026-07-10' },
+    { item: 'Cella — proposal accepted', vendor: 'Net terms (no deposit)', cost: 0, status: 'installed', neededBy: '2026-05-25' },
+    { item: 'Trim package', vendor: 'Witt Building Material', cost: 0, status: 'ordered', neededBy: '2026-06-08' },
+    { item: 'Interior doors', vendor: 'TBD', cost: 0, status: 'ordered', neededBy: '2026-06-15' },
+    { item: 'Plumbing fixtures', vendor: 'Ferguson + Priority Plumbing', cost: 9501, status: 'ordered', neededBy: '2026-06-25' },
+    { item: 'Electrical fixtures', vendor: 'Phoenix Electric / TBD', cost: 0, status: 'not-ordered', neededBy: '2026-07-05' },
+    { item: 'HVAC final setout (~$22K pending)', vendor: 'Construction Services One', cost: 0, status: 'ordered', neededBy: '2026-09-15' },
+    { item: 'Masonry labor (brick veneer)', vendor: 'Construction Services One', cost: 19626, status: 'installed', neededBy: '2026-03-01' },
+    { item: 'Appliances', vendor: 'TBD', cost: 0, status: 'not-ordered', neededBy: '2026-07-25' },
+    { item: 'Hardware (knobs / pulls)', vendor: 'TBD', cost: 0, status: 'not-ordered', neededBy: '2026-07-10' },
+    { item: 'Fireplace + stone', vendor: "Archie's", cost: 4135, status: 'installed', neededBy: '2026-04-15' },
+    { item: 'Gutters (materials + labor)', vendor: 'Robbins Siding & Guttering', cost: 1440, status: 'installed', neededBy: '2026-05-08' },
+    { item: 'Soffit & Fascia install labor', vendor: 'Robbins Siding & Guttering', cost: 4834, status: 'installed', neededBy: '2026-05-08' },
+    { item: 'Downspouts (bill pending)', vendor: 'Robbins Siding & Guttering', cost: 0, status: 'ordered', neededBy: '2026-06-30' },
+    { item: 'Garage door', vendor: 'Farmer Garage Door', cost: 5400, status: 'ordered', neededBy: '2026-07-01' },
+  ],
+  '326': []  // same template — data TBD
+};
+
+// ─── COLOR & FINISH SELECTIONS (LOCKED IN) ────────────────────
+const FINISHES = {
+  '330': {
+    interior: [
+      ['Walls', 'SW 7551 Greek Villa — flat (Super Paint)'],
+      ['Ceilings', 'SW 7551 Greek Villa — flat (ProMar Ceiling)'],
+      ['Trim & Doors', 'SW 7006 Extra White — semi-gloss (Emerald Urethane)'],
+    ],
+    exterior: [
+      ['Lap Siding', 'SW 7603 Poolhouse'],
+      ['Garage Bump-out Shake', 'SW 9178 In the Navy'],
+      ['Dormers + Gable B&B', 'SW 7036 Accessible Beige'],
+      ['Exterior Trim', 'SW 7006 Extra White'],
+      ['Front Door / Accent', 'TBD — coordinate with Liz'],
+    ],
+    flooring: [
+      ['Master Bath Floor + Shower', 'Cella — on file (Prop #1-007456)'],
+      ['Hall Bath Floor + Kitchen Backsplash', 'Cella — on file'],
+      ['Main Level LVP (2,180 SF)', 'Cella — on file'],
+      ['Bonus + Stairs Carpet (816 SF)', 'Cella — on file'],
+    ],
+    flooringTotal: 34723,
+  },
+  '326': null  // same template — selections TBD
 };
 
 // ─── COST CODES ────────────────────────────────────────────────
@@ -1096,7 +1199,9 @@ function renderProjectDetail(project) {
   // Commission calculated dynamically from sale price
   const commissionRate = p.commissionRate || 0.03;
   const commission = Math.round(displaySale * commissionRate);
-  const totalProjected = totalBudgetLines + commission;
+  // Handoff projected all-in (authoritative) takes precedence over the line-item estimate
+  const baseCost = p.projectedAllIn || totalBudgetLines;
+  const totalProjected = baseCost + commission;
 
   const remaining = totalProjected - qbSpent;
   const projProfit = displaySale - totalProjected;
@@ -1114,6 +1219,10 @@ function renderProjectDetail(project) {
           <span style="font-size:0.72rem;color:var(--text-muted);">${p.address}</span>
         </div>
       </div>
+      ${(p.targetCompletion || p.currentPhase) ? `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+        ${p.targetCompletion ? `<div style="flex:1;min-width:180px;background:var(--surface2);border-radius:8px;padding:10px 14px;"><div class="s-lbl">🎯 Target Completion</div><div style="font-weight:700;color:var(--gold);margin-top:2px;">${p.targetCompletion}</div></div>` : ''}
+        ${p.currentPhase ? `<div style="flex:2;min-width:200px;background:var(--surface2);border-radius:8px;padding:10px 14px;"><div class="s-lbl">🔨 Current Phase</div><div style="font-weight:600;margin-top:2px;">${p.currentPhase}</div></div>` : ''}
+      </div>` : ''}
       ${p.listingDesc ? `<div style="background:var(--surface2);border-left:3px solid var(--gold);border-radius:0 6px 6px 0;padding:12px 14px;font-size:0.82rem;color:var(--text-muted);line-height:1.6;margin-bottom:14px;">${p.listingDesc}</div>` : ''}
       <div class="spec-grid">
         <div class="spec-item"><div class="s-val">${p.sqftTotal.toLocaleString()}</div><div class="s-lbl">Finished sqft</div></div>
@@ -1129,7 +1238,7 @@ function renderProjectDetail(project) {
 
     <div class="two-col">
       <div class="card">
-        <div class="card-title">Projected Budget — Line by Line</div>
+        <div class="card-title">${p.projectedAllIn ? 'Pre-Construction Cost Estimate' : 'Projected Budget — Line by Line'}</div>
         <div class="table-wrap">
           <table class="budget-line-table">
             <thead><tr><th>Category</th><th style="text-align:right;">Projected</th><th>Notes</th></tr></thead>
@@ -1139,25 +1248,40 @@ function renderProjectDetail(project) {
                 <td style="text-align:right;font-variant-numeric:tabular-nums;">${fmt(v.projected)}</td>
                 <td style="color:var(--text-muted);font-size:0.78rem;">${v.note}</td>
               </tr>`).join('')}
+              ${p.projectedAllIn ? `<tr style="border-top:1px solid var(--border);">
+                <td style="color:var(--text-muted);">Original estimate subtotal</td>
+                <td style="text-align:right;color:var(--text-muted);font-variant-numeric:tabular-nums;">${fmt(totalBudgetLines)}</td>
+                <td style="color:var(--text-muted);font-size:0.78rem;">superseded by handoff projection</td>
+              </tr>
+              <tr>
+                <td style="font-weight:600;">Projected All-In — Handoff (${p.snapshotDate||'May 17'})</td>
+                <td style="text-align:right;font-weight:600;font-variant-numeric:tabular-nums;">${fmt(p.projectedAllIn)}</td>
+                <td style="color:var(--text-muted);font-size:0.78rem;">~$${Math.round(p.projectedAllIn/p.sqftTotal)}/sqft · authoritative</td>
+              </tr>` : ''}
               <tr style="border-top:1px solid var(--border);">
                 <td style="color:var(--text-muted);">Real Estate Commission (${(commissionRate*100).toFixed(0)}%)</td>
                 <td style="text-align:right;color:var(--text-muted);font-variant-numeric:tabular-nums;">${fmt(commission)}</td>
-                <td style="color:var(--text-muted);font-size:0.78rem;">${(commissionRate*100).toFixed(0)}% of ${fmt(displaySale)} sale price</td>
+                <td style="color:var(--text-muted);font-size:0.78rem;">${(commissionRate*100).toFixed(0)}% of ${fmt(displaySale)} — note: handoff projection excludes this</td>
               </tr>
               <tr class="total-row">
                 <td>TOTAL PROJECTED COST</td>
                 <td style="text-align:right;">${fmt(totalProjected)}</td>
                 <td></td>
               </tr>
+              ${p.spendToDate ? `<tr class="spent-row">
+                <td>Spend to Date — Handoff${p.transactionCount?` (${p.transactionCount} txns)`:''}</td>
+                <td style="text-align:right;">(${fmt(p.spendToDate)})</td>
+                <td style="color:var(--text-muted);font-size:0.78rem;">330's true share after lot re-split</td>
+              </tr>` : ''}
               <tr class="spent-row">
-                <td>QB Spent to Date</td>
+                <td>QB Inventory Asset (live)</td>
                 <td style="text-align:right;">(${fmt(qbSpent)})</td>
-                <td style="color:var(--text-muted);font-size:0.78rem;">Inventory Asset balance</td>
+                <td style="color:var(--text-muted);font-size:0.78rem;">${p.spendToDate && Math.abs(qbSpent - p.spendToDate) > 1000 ? '⚠ includes un-split joint lot — see reconciliation' : 'Inventory Asset balance'}</td>
               </tr>
               <tr class="remain-row">
                 <td>Remaining to Spend</td>
                 <td style="text-align:right;color:${remaining>=0?'var(--green)':'var(--red)'};">${remaining>=0?fmt(remaining):'OVER '+fmt(Math.abs(remaining))}</td>
-                <td style="color:var(--text-muted);font-size:0.78rem;">${remaining>=0?'Estimated budget left':'Over projected budget'}</td>
+                <td style="color:var(--text-muted);font-size:0.78rem;">vs live QB balance</td>
               </tr>
             </tbody>
           </table>
@@ -1210,6 +1334,113 @@ function renderProjectDetail(project) {
           <div style="margin-top:10px;font-size:0.75rem;color:var(--text-muted);font-style:italic;">${p.compNotes}</div>
         </div>
       </div>
+    </div>`;
+}
+
+// ─── PHASE BUDGET (spent vs budget) ───────────────────────────
+function renderPhaseBudget(project) {
+  const el = document.getElementById('phasebudget-' + project);
+  if (!el) return;
+  const phases = PHASES[project] || [];
+  if (!phases.length) { el.innerHTML = ''; return; }
+  const totalSpent  = phases.reduce((s,p) => s + p.spent, 0);
+  const totalBudget = phases.reduce((s,p) => s + p.budget, 0);
+  const statusColor = { done:'var(--green)', active:'var(--orange)', pending:'var(--text-muted)' };
+  el.innerHTML = `
+    <div class="card">
+      <div class="section-header">
+        <div class="card-title">Phase Budget — Spent vs Plan</div>
+        <span class="badge badge-gold">${fmt(totalSpent)} / ${fmt(totalBudget)}</span>
+      </div>
+      <div class="table-wrap"><table class="budget-line-table">
+        <thead><tr><th>Phase</th><th style="text-align:right;">Spent</th><th style="text-align:right;">Budget</th><th>Status</th></tr></thead>
+        <tbody>${phases.map(p => {
+          const pct = p.budget > 0 ? Math.min(100, Math.round(p.spent/p.budget*100)) : 0;
+          const over = p.spent > p.budget;
+          return `<tr>
+            <td>${p.phase}
+              <div class="phase-bar-track"><div class="phase-bar-fill" style="width:${over?100:pct}%;background:${over?'var(--red)':statusColor[p.status]}"></div></div>
+            </td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;${over?'color:var(--red);font-weight:600;':''}">${fmt(p.spent)}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-muted);">${fmt(p.budget)}</td>
+            <td><span style="color:${statusColor[p.status]};font-weight:600;text-transform:capitalize;font-size:0.8rem;">${p.status}</span>${p.flag?`<div style="font-size:0.7rem;color:var(--text-muted);">${p.flag}</div>`:''}</td>
+          </tr>`;
+        }).join('')}
+        <tr class="total-row"><td>TOTAL SPENT TO DATE</td><td style="text-align:right;">${fmt(totalSpent)}</td><td style="text-align:right;">${fmt(totalBudget)}</td><td></td></tr>
+        </tbody>
+      </table></div>
+    </div>`;
+}
+
+// ─── MATERIALS STATUS ─────────────────────────────────────────
+function renderMaterials(project) {
+  const el = document.getElementById('materials-' + project);
+  if (!el) return;
+  const items = MATERIALS[project] || [];
+  if (!items.length) {
+    el.innerHTML = `<div class="card"><div class="card-title">Materials Status</div><div class="empty-state">Same template as 330 — material line items to be added for this project.</div></div>`;
+    return;
+  }
+  const order = { 'not-ordered':0, 'bid-in':1, 'ordered':2, 'on-site':3, 'installed':4 };
+  const counts = {};
+  items.forEach(i => counts[i.status] = (counts[i.status]||0)+1);
+  const committed = items.reduce((s,i) => s + (i.cost||0), 0);
+  const sorted = items.slice().sort((a,b) => order[a.status]-order[b.status] || new Date(a.neededBy)-new Date(b.neededBy));
+  const lbl = s => s.replace('-',' ');
+  el.innerHTML = `
+    <div class="card">
+      <div class="section-header">
+        <div class="card-title">Materials Status — ${items.length} Items</div>
+        <span class="badge badge-gold">${fmt(committed)} committed</span>
+      </div>
+      <div class="status-legend">
+        ${['installed','on-site','ordered','bid-in','not-ordered'].map(s => `<span><span class="mat-status ms-${s}">${lbl(s)}</span> ${counts[s]||0}</span>`).join('')}
+      </div>
+      <div class="table-wrap"><table class="budget-line-table">
+        <thead><tr><th>Item</th><th>Vendor</th><th style="text-align:right;">Cost</th><th>Status</th><th>Needed By</th></tr></thead>
+        <tbody>${sorted.map(i => `<tr>
+          <td>${i.item}</td>
+          <td style="color:var(--text-muted);font-size:0.8rem;">${i.vendor}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;">${i.cost?fmt(i.cost):'—'}</td>
+          <td><span class="mat-status ms-${i.status}">${lbl(i.status)}</span></td>
+          <td style="color:var(--text-muted);font-size:0.8rem;white-space:nowrap;">${i.neededBy||'—'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`;
+}
+
+// ─── COLOR & FINISH SELECTIONS ────────────────────────────────
+const SW_HEX = { '7551':'#EDE7D8','7006':'#EEEFE9','7603':'#5C7B7A','9178':'#3B4655','7036':'#D2C8B6' };
+function swChip(val) {
+  const m = val.match(/SW\s*(\d{4})/);
+  const hex = m ? SW_HEX[m[1]] : null;
+  return hex ? `<span class="finish-chip" style="background:${hex}"></span>` : '';
+}
+
+function renderFinishes(project) {
+  const el = document.getElementById('finishes-' + project);
+  if (!el) return;
+  const f = FINISHES[project];
+  if (!f) {
+    el.innerHTML = `<div class="card"><div class="card-title">Color &amp; Finish Selections</div><div class="empty-state">Same template as 330 — selections to be locked in for this project.</div></div>`;
+    return;
+  }
+  const rowSet = (title, rows, withChip) => `
+    <div style="margin-bottom:16px;">
+      <div style="font-weight:700;color:var(--gold);font-size:0.82rem;margin-bottom:8px;">${title}</div>
+      <div class="table-wrap"><table class="budget-line-table"><tbody>
+        ${rows.map(([k,v]) => `<tr><td style="white-space:nowrap;">${withChip?swChip(v):''}${k}</td><td style="color:var(--text-muted);">${v}</td></tr>`).join('')}
+      </tbody></table></div>
+    </div>`;
+  el.innerHTML = `
+    <div class="card">
+      <div class="section-header">
+        <div class="card-title">Color &amp; Finish Selections — Locked In</div>
+        <span class="badge badge-green">Decisions complete</span>
+      </div>
+      ${rowSet('Interior Paint (Sherwin Williams)', f.interior, true)}
+      ${rowSet('Exterior Paint (Sherwin Williams)', f.exterior, true)}
+      ${rowSet(`Flooring — Cella (${fmt(f.flooringTotal)} total)`, f.flooring, false)}
     </div>`;
 }
 
@@ -1531,6 +1762,9 @@ function init() {
   renderStages('330'); renderStages('326');
   renderBudget('330'); renderBudget('326');
   renderProjectDetail('330'); renderProjectDetail('326');
+  renderPhaseBudget('330'); renderPhaseBudget('326');
+  renderMaterials('330'); renderMaterials('326');
+  renderFinishes('330'); renderFinishes('326');
   refreshEmployeeSelects();
   refreshProjectDropdown();
   refreshCostCodeDropdown();
