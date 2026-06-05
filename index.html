@@ -162,6 +162,19 @@
     .upload-progress { height: 4px; background: var(--surface2); border-radius: 2px; margin-top: 10px; overflow: hidden; display: none; }
     .upload-progress-bar { height: 100%; background: var(--gold); border-radius: 2px; transition: width 0.3s; }
 
+    /* ── Documents ── */
+    .doc-upload-zone { border: 2px dashed var(--border); border-radius: 10px; padding: 20px; display: flex; align-items: center; gap: 14px; cursor: pointer; transition: all 0.2s; color: var(--text-muted); font-size: 0.88rem; }
+    .doc-upload-zone:hover { border-color: var(--gold); background: rgba(93,179,228,0.06); color: var(--gold); }
+    .doc-upload-zone input[type="file"] { display: none; }
+    .doc-list { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+    .doc-item { display: flex; align-items: center; gap: 12px; background: var(--surface2); border-radius: 8px; padding: 12px 14px; border: 1px solid var(--border); }
+    .doc-icon { font-size: 1.6rem; flex-shrink: 0; }
+    .doc-info { flex: 1; min-width: 0; }
+    .doc-name { font-size: 0.88rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .doc-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+    .doc-category { display: inline-block; background: rgba(93,179,228,0.12); color: var(--blue); padding: 1px 7px; border-radius: 4px; font-size: 0.68rem; font-weight: 600; margin-right: 6px; }
+    .doc-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
     /* ── Photo Modal ── */
     .photo-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.92); display: flex; align-items: center; justify-content: center; z-index: 400; padding: 20px; }
     .photo-modal-img { max-width: 100%; max-height: 90vh; border-radius: 8px; object-fit: contain; }
@@ -221,6 +234,29 @@
     <div class="upload-progress" id="progress-330"><div class="upload-progress-bar" id="progress-bar-330"></div></div>
     <div class="photo-grid" id="photo-grid-330"></div>
   </div>
+  <div class="card">
+    <div class="section-header">
+      <div class="card-title">Documents</div>
+      <span id="doc-count-330" class="badge badge-gray"></span>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+      <select id="doc-cat-330" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);outline:none;font-size:0.85rem;">
+        <option value="Plans">Plans</option>
+        <option value="Permits">Permits</option>
+        <option value="Contracts">Contracts</option>
+        <option value="Inspections">Inspections</option>
+        <option value="Other">Other</option>
+      </select>
+      <input type="text" id="doc-label-330" placeholder="Label (e.g. Plumbing, Electrical)" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);outline:none;font-size:0.85rem;min-width:200px;flex:1;">
+      <div class="doc-upload-zone" style="flex:1;" onclick="document.getElementById('docfile-330').click()">
+        <input type="file" id="docfile-330" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.png,.heic" onchange="handleDocFiles(event,'330')">
+        <span style="font-size:1.4rem;">📎</span>
+        <span>Click to upload documents — PDF, DOC, XLS, images</span>
+      </div>
+    </div>
+    <div class="upload-progress" id="doc-progress-330"><div class="upload-progress-bar" id="doc-progress-bar-330"></div></div>
+    <div class="doc-list" id="doc-list-330"></div>
+  </div>
 </div>
 
 <!-- 326 RODDY BRANCH -->
@@ -248,6 +284,29 @@
     </div>
     <div class="upload-progress" id="progress-326"><div class="upload-progress-bar" id="progress-bar-326"></div></div>
     <div class="photo-grid" id="photo-grid-326"></div>
+  </div>
+  <div class="card">
+    <div class="section-header">
+      <div class="card-title">Documents</div>
+      <span id="doc-count-326" class="badge badge-gray"></span>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+      <select id="doc-cat-326" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);outline:none;font-size:0.85rem;">
+        <option value="Plans">Plans</option>
+        <option value="Permits">Permits</option>
+        <option value="Contracts">Contracts</option>
+        <option value="Inspections">Inspections</option>
+        <option value="Other">Other</option>
+      </select>
+      <input type="text" id="doc-label-326" placeholder="Label (e.g. Plumbing, Electrical)" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);outline:none;font-size:0.85rem;min-width:200px;flex:1;">
+      <div class="doc-upload-zone" style="flex:1;" onclick="document.getElementById('docfile-326').click()">
+        <input type="file" id="docfile-326" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.png,.heic" onchange="handleDocFiles(event,'326')">
+        <span style="font-size:1.4rem;">📎</span>
+        <span>Click to upload documents — PDF, DOC, XLS, images</span>
+      </div>
+    </div>
+    <div class="upload-progress" id="doc-progress-326"><div class="upload-progress-bar" id="doc-progress-bar-326"></div></div>
+    <div class="doc-list" id="doc-list-326"></div>
   </div>
 </div>
 
@@ -1266,6 +1325,8 @@ function initStorage() {
   storage = firebase.storage();
   loadPhotos('330');
   loadPhotos('326');
+  loadDocs('330');
+  loadDocs('326');
 }
 
 function loadPhotos(project) {
@@ -1350,6 +1411,94 @@ async function deletePhoto(project, docId, storagePath) {
   }
   await db.collection('photos_' + project).doc(docId).delete();
   toast('Photo deleted.');
+}
+
+// ─── DOCUMENTS ─────────────────────────────────────────────────
+function loadDocs(project) {
+  if (!db) return;
+  db.collection('docs_' + project).orderBy('uploadedAt','desc').onSnapshot(snap => {
+    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderDocList(project, docs);
+  });
+}
+
+function renderDocList(project, docs) {
+  const list  = document.getElementById('doc-list-' + project);
+  const badge = document.getElementById('doc-count-' + project);
+  if (!list) return;
+  if (badge) { badge.textContent = docs.length + ' file' + (docs.length !== 1 ? 's' : ''); badge.className = docs.length ? 'badge badge-gold' : 'badge badge-gray'; }
+  if (!docs.length) { list.innerHTML = '<div class="empty-state" style="padding:20px;">No documents yet — upload plans, permits, contracts above.</div>'; return; }
+  const icons = { pdf:'📄', doc:'📝', docx:'📝', xls:'📊', xlsx:'📊', jpg:'🖼️', jpeg:'🖼️', png:'🖼️', heic:'🖼️' };
+  list.innerHTML = docs.map(d => {
+    const ext = (d.filename || '').split('.').pop().toLowerCase();
+    const icon = icons[ext] || '📎';
+    const size = d.size ? (d.size > 1048576 ? (d.size/1048576).toFixed(1)+' MB' : Math.round(d.size/1024)+' KB') : '';
+    const displayName = d.label ? d.label : (d.filename || 'Document');
+    const subName = d.label ? `<div class="doc-meta" style="margin-top:1px;">${d.filename || ''}</div>` : '';
+    return `<div class="doc-item">
+      <div class="doc-icon">${icon}</div>
+      <div class="doc-info">
+        <div class="doc-name">${displayName}</div>
+        ${subName}
+        <div class="doc-meta"><span class="doc-category">${d.category || 'Other'}</span>${d.date || ''} ${size ? '· '+size : ''}</div>
+      </div>
+      <div class="doc-actions">
+        <a href="${d.url}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">↓ Open</a>
+        <button onclick="deleteDoc('${project}','${d.id}','${esc(d.storagePath||'')}')" class="btn btn-danger btn-sm">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function handleDocFiles(event, project) {
+  const files = Array.from(event.target.files);
+  uploadDocs(project, files);
+  event.target.value = '';
+}
+
+async function uploadDocs(project, files) {
+  if (!storage || !files.length) return;
+  const category = document.getElementById('doc-cat-' + project)?.value || 'Other';
+  const label = document.getElementById('doc-label-' + project)?.value.trim() || '';
+  const progressWrap = document.getElementById('doc-progress-' + project);
+  const progressBar  = document.getElementById('doc-progress-bar-' + project);
+  if (progressWrap) progressWrap.style.display = 'block';
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const path = `docs/${project}/${Date.now()}_${file.name}`;
+    const ref  = storage.ref(path);
+    try {
+      const uploadTask = ref.put(file);
+      await new Promise((resolve, reject) => {
+        uploadTask.on('state_changed',
+          snap => { const pct = (snap.bytesTransferred / snap.totalBytes) * 100; if (progressBar) progressBar.style.width = pct + '%'; },
+          reject, resolve
+        );
+      });
+      const url = await ref.getDownloadURL();
+      await db.collection('docs_' + project).add({
+        url, storagePath: path, filename: file.name, size: file.size, category, label,
+        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        uploadedAt: new Date().toISOString()
+      });
+      toast(`${file.name} uploaded.`);
+    } catch (err) {
+      toast('Upload failed: ' + err.message, 'error');
+    }
+  }
+  if (progressWrap) { progressWrap.style.display = 'none'; if (progressBar) progressBar.style.width = '0%'; }
+  const labelField = document.getElementById('doc-label-' + project);
+  if (labelField) labelField.value = '';
+}
+
+async function deleteDoc(project, docId, storagePath) {
+  if (!confirm('Delete this document?')) return;
+  if (storagePath && storage) {
+    try { await storage.ref(storagePath).delete(); } catch(e) {}
+  }
+  await db.collection('docs_' + project).doc(docId).delete();
+  toast('Document deleted.');
 }
 
 function openPhotoModal(url, caption, date) {
