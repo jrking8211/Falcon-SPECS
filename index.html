@@ -98,6 +98,11 @@
     .gate-input { width: 100%; text-align: center; font-size: 1.4rem; letter-spacing: 0.4em; padding: 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); outline: none; }
     .gate-input:focus { border-color: var(--gold); }
     .gate-error { color: var(--red); font-size: 0.78rem; min-height: 18px; margin: 8px 0 4px; }
+    /* Collapsible cards */
+    .card > .section-header, .card > .card-title { cursor: pointer; user-select: none; }
+    .card > .section-header > .card-title::after, .card > .card-title::after { content: '▾'; margin-left: 8px; font-size: 0.78em; color: var(--text-muted); }
+    .card.collapsed > .section-header > .card-title::after, .card.collapsed > .card-title::after { content: '▸'; }
+    .card.collapsed > :not(.section-header):not(.card-title) { display: none !important; }
     .click-hint { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; }
 
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -2245,8 +2250,58 @@ function seedEmployees() {
 }
 
 // ─── INIT ──────────────────────────────────────────────────────
+// ─── COLLAPSIBLE CARDS ────────────────────────────────────────
+// Click a card header to collapse/expand; state persists by title key and is
+// re-applied after any re-render. Long reference sections start collapsed.
+function cardCollapseKey(card) {
+  const t = card.querySelector('.card-title');
+  if (!t) return '';
+  return t.textContent.split('—')[0].trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+function getCollapsedSet() { try { return new Set(JSON.parse(localStorage.getItem('fd_collapsed') || '[]')); } catch { return new Set(); } }
+function toggleCardCollapse(card) {
+  card.classList.toggle('collapsed');
+  const key = cardCollapseKey(card);
+  if (!key) return;
+  const set = getCollapsedSet();
+  card.classList.contains('collapsed') ? set.add(key) : set.delete(key);
+  localStorage.setItem('fd_collapsed', JSON.stringify([...set]));
+}
+function applyCollapsed() {
+  const set = getCollapsedSet();
+  document.querySelectorAll('.card').forEach(card => {
+    const key = cardCollapseKey(card);
+    card.classList.toggle('collapsed', !!key && set.has(key));
+  });
+}
+function initCollapse() {
+  if (localStorage.getItem('fd_collapsed') === null) {
+    localStorage.setItem('fd_collapsed', JSON.stringify(['plan-specs','pre-construction-cost-estimate','projected-budget','comparable-sales-pricing','materials-status','color-finish-selections','project-photos','documents']));
+  }
+  document.addEventListener('click', e => {
+    if (e.target.closest('button, input, a, select, textarea, label')) return;
+    let n = e.target;
+    while (n && n !== document.body) {
+      if (n.parentElement && n.parentElement.classList && n.parentElement.classList.contains('card') &&
+          (n.classList.contains('section-header') || n.classList.contains('card-title'))) {
+        toggleCardCollapse(n.parentElement);
+        return;
+      }
+      n = n.parentElement;
+    }
+  });
+  let pending = false;
+  new MutationObserver(() => {
+    if (pending) return;
+    pending = true;
+    setTimeout(() => { pending = false; applyCollapsed(); }, 50);
+  }).observe(document.body, { childList: true, subtree: true });
+  applyCollapsed();
+}
+
 function init() {
   initGate();
+  initCollapse();
   document.getElementById('tl-date').valueAsDate = new Date();
   initFirebase();
   seedEmployees();
