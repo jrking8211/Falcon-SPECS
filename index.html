@@ -72,6 +72,18 @@
     .stage-badge { font-size: 0.65rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; flex-shrink: 0; white-space: nowrap; }
     .stage-item.complete .stage-badge { background: rgba(34,197,94,0.15); color: var(--green); }
     .stage-item.in-progress .stage-badge { background: rgba(201,162,39,0.15); color: var(--gold); }
+    .stage-item.locked { cursor: default; }
+    .stage-item.locked:hover { border-color: var(--border); }
+    .stage-item.complete.locked:hover { border-color: var(--green); }
+    .stage-item.in-progress.locked:hover { border-color: var(--gold); }
+    .phase-group { margin-bottom: 16px; }
+    .phase-group-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+    .phase-group-title { font-weight: 700; font-size: 0.92rem; padding-left: 10px; }
+    .phase-group-count { font-size: 0.68rem; font-weight: 700; white-space: nowrap; text-transform: uppercase; letter-spacing: 0.4px; }
+    .edit-toggle { background: var(--surface2); color: var(--text); border: 1px solid var(--border); padding: 5px 12px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 0.72rem; white-space: nowrap; }
+    .edit-toggle:hover { border-color: var(--gold); }
+    .edit-toggle.on { background: var(--green); color: #fff; border-color: var(--green); }
+    .alloc-input { width: 92px; text-align: right; background: var(--surface2); border: 1px solid var(--gold); border-radius: 5px; padding: 4px 6px; color: var(--text); font-variant-numeric: tabular-nums; outline: none; }
     .click-hint { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; }
 
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -229,11 +241,14 @@
   <div id="finishes-330"></div>
   <div class="card">
     <div class="section-header">
-      <div class="card-title">Construction Stages</div>
-      <span id="stage-badge-330" class="badge badge-gold"></span>
+      <div class="card-title">Construction Phases</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span id="stage-badge-330" class="badge badge-gold"></span>
+        <button id="stage-edit-330" class="edit-toggle" onclick="toggleEditMode('330')">🔒 Edit (Admin)</button>
+      </div>
     </div>
-    <p class="click-hint">Click once = In Progress &nbsp;·&nbsp; Click again = Complete &nbsp;·&nbsp; Click again = Reset</p>
-    <div class="stages-grid" id="stages-330"></div>
+    <p class="click-hint" id="stage-hint-330">Unlock “Edit (Admin)” to update phase progress.</p>
+    <div id="stages-330"></div>
   </div>
   <div class="card">
     <div class="section-header">
@@ -283,11 +298,14 @@
   <div id="finishes-326"></div>
   <div class="card">
     <div class="section-header">
-      <div class="card-title">Construction Stages</div>
-      <span id="stage-badge-326" class="badge badge-gold"></span>
+      <div class="card-title">Construction Phases</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span id="stage-badge-326" class="badge badge-gold"></span>
+        <button id="stage-edit-326" class="edit-toggle" onclick="toggleEditMode('326')">🔒 Edit (Admin)</button>
+      </div>
     </div>
-    <p class="click-hint">Click once = In Progress &nbsp;·&nbsp; Click again = Complete &nbsp;·&nbsp; Click again = Reset</p>
-    <div class="stages-grid" id="stages-326"></div>
+    <p class="click-hint" id="stage-hint-326">Unlock “Edit (Admin)” to update phase progress.</p>
+    <div id="stages-326"></div>
   </div>
   <div class="card">
     <div class="section-header">
@@ -509,7 +527,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -578,8 +596,12 @@ function handleFirestoreUpdate(key) {
   else if (key === 'budget_326')      { renderBudget('326'); renderProjectDetail('326'); }
   else if (key === 'qb_balance_330')  { renderBudget('330'); renderProjectDetail('330'); }
   else if (key === 'qb_balance_326')  { renderBudget('326'); renderProjectDetail('326'); }
-  else if (key === 'gl_330')          renderPhaseBudget('330');
-  else if (key === 'gl_326')          renderPhaseBudget('326');
+  else if (key === 'gl_330')          { renderPhaseBudget('330'); renderBudget('330'); }
+  else if (key === 'gl_326')          { renderPhaseBudget('326'); renderBudget('326'); }
+  else if (key === 'phasestages_330') { renderStages('330'); renderPhaseBudget('330'); }
+  else if (key === 'phasestages_326') { renderStages('326'); renderPhaseBudget('326'); }
+  else if (key === 'phasebudget_330') { renderPhaseBudget('330'); renderBudget('330'); }
+  else if (key === 'phasebudget_326') { renderPhaseBudget('326'); renderBudget('326'); }
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
 }
@@ -686,33 +708,61 @@ const PLAN_DATA = {
   }
 };
 
-// ─── PHASE BUDGET vs SPENT (from handoff May 17, 2026) ─────────
-// Phase plan: budget targets + default status + ordering. Spent is computed LIVE
-// from the QB register (gl_330 / gl_326) that Make.com syncs to Firebase nightly.
-const PHASE_PLAN = {
-  '330': [
-    { phase: 'Lot Acquired',                 budget: 95000,  status: 'done' },
-    { phase: 'Permits, Design & Soft Costs', budget: 22000,  status: 'active', flag: 'survey, permits, architect, GC, insurance, sanitation' },
-    { phase: 'Foundation',                   budget: 50000,  status: 'done' },
-    { phase: 'Framing & Exterior Shell',     budget: 185000, status: 'done', flag: 'incl. roofing, siding, brick, windows, gutters' },
-    { phase: 'MEP Rough-in',                 budget: 90000,  status: 'active', flag: 'HVAC final ~$22K still to bill' },
-    { phase: 'Drywall & Insulation',         budget: 25000,  status: 'active' },
-    { phase: 'Finishes',                     budget: 80000,  status: 'active' },
-    { phase: 'Punch List',                   budget: 10000,  status: 'pending' },
-    { phase: 'Listing / Sale',               budget: 5000,   status: 'pending' },
-  ],
-  '326': [
-    { phase: 'Lot Acquired',                 budget: 75000,  status: 'done' },
-    { phase: 'Permits, Design & Soft Costs', budget: 22000,  status: 'active' },
-    { phase: 'Foundation',                   budget: 50000,  status: 'active' },
-    { phase: 'Framing & Exterior Shell',     budget: 185000, status: 'pending' },
-    { phase: 'MEP Rough-in',                 budget: 90000,  status: 'pending' },
-    { phase: 'Drywall & Insulation',         budget: 25000,  status: 'pending' },
-    { phase: 'Finishes',                     budget: 80000,  status: 'pending' },
-    { phase: 'Punch List',                   budget: 10000,  status: 'pending' },
-    { phase: 'Listing / Sale',               budget: 5000,   status: 'pending' },
-  ],
+// ─── CONSTRUCTION PHASES (stages → status → budget) ───────────
+// Each phase groups the sub-stages you click to mark In Progress / Complete.
+// The phase's roll-up status (pending/active/done) is DERIVED from its stages
+// and flows into the Phase Budget table. Spent is computed LIVE from QB.
+const PHASE_STAGES = {
+  'Lot Acquired':                 ['Lot Closed'],
+  'Permits, Design & Soft Costs': ['Plans Finalized','Permits Issued','Site Prep'],
+  'Foundation':                   ['Footings Poured','Foundation Poured','Foundation Complete'],
+  'Framing & Exterior Shell':     ['Framing Started','Framing Complete','Roof Sheathing','Roof Complete','Windows & Doors','Siding / Brick','Exterior Trim','Exterior Paint'],
+  'MEP Rough-in':                 ['Rough Plumbing','Rough Electrical','Rough HVAC'],
+  'Drywall & Insulation':         ['Insulation','Drywall Hung','Drywall Taped','Drywall Complete'],
+  'Interior Finishes':            ['Prime Paint','Color Paint','Cabinets','Countertops','Flooring','Interior Trim & Doors','Fixtures & Hardware','Final Plumbing / Electrical / HVAC'],
+  'Exterior Finishes':            ['Driveway','Sidewalks / Flatwork','Final Grade','Landscaping / Sod'],
+  'Punch List':                   ['Final Inspections','Certificate of Occupancy','Punch List'],
+  'Listing / Sale':               ['Listed','Under Contract','Closed'],
 };
+const PHASE_ORDER = Object.keys(PHASE_STAGES);
+
+// Optional context note shown under a phase in the budget table.
+const PHASE_FLAGS = {
+  'Permits, Design & Soft Costs': 'survey, permits, architect, GC, insurance, sanitation',
+  'Framing & Exterior Shell':     'incl. roofing, siding, brick, windows, gutters',
+  'MEP Rough-in':                 'HVAC final ~$22K still to bill',
+  'Exterior Finishes':            'driveway, sidewalks, final grade, landscaping',
+};
+
+// Default $ allocation per phase, per project. Editable on the dashboard (admin
+// PIN) → stored override in phasebudget_<project>.
+const PHASE_BUDGET_DEFAULT = {
+  '330': { 'Lot Acquired':95000, 'Permits, Design & Soft Costs':22000, 'Foundation':50000, 'Framing & Exterior Shell':185000, 'MEP Rough-in':90000, 'Drywall & Insulation':25000, 'Interior Finishes':80000, 'Exterior Finishes':20000, 'Punch List':10000, 'Listing / Sale':5000 },
+  '326': { 'Lot Acquired':75000, 'Permits, Design & Soft Costs':22000, 'Foundation':50000, 'Framing & Exterior Shell':185000, 'MEP Rough-in':90000, 'Drywall & Insulation':25000, 'Interior Finishes':80000, 'Exterior Finishes':20000, 'Punch List':10000, 'Listing / Sale':5000 },
+};
+
+// Roll-up status for a phase from its sub-stage completion.
+function phaseStageStatus(project, phaseName) {
+  const stages = PHASE_STAGES[phaseName] || [];
+  const store = S.get('phasestages_' + project, {});
+  let done = 0, started = 0;
+  stages.forEach(st => {
+    const s = store[phaseName + '::' + st];
+    if (s === 'complete') done++;
+    else if (s === 'in-progress') started++;
+  });
+  const status = !stages.length ? 'pending'
+    : done === stages.length ? 'done'
+    : (done > 0 || started > 0) ? 'active' : 'pending';
+  return { done, started, total: stages.length, status };
+}
+
+// Current $ allocation for a phase (stored admin override → default).
+function phaseBudget(project, phaseName) {
+  const ov = S.get('phasebudget_' + project, {});
+  const v = ov[phaseName];
+  return (v === undefined || v === null || v === '') ? (PHASE_BUDGET_DEFAULT[project]?.[phaseName] || 0) : Number(v);
+}
 
 // Keyword → phase categorizer (mirrors the reconciliation logic). Order matters.
 function categorizePhase(payee, memo) {
@@ -723,7 +773,8 @@ function categorizePhase(payee, memo) {
   if (has('witt','baca','crane','lumber','framing','truss','roof','shingle','soffit','fascia','siding','gutter','brick','us brick','masonry','window','exterior door')) return 'Framing & Exterior Shell';
   if (has('phoenix','electric','plumb','ferguson','priority','noland','hvac','duct','mechanical','rough','pro pump')) return 'MEP Rough-in';
   if (has('drywall','foundation building','gypsum','sheetrock','insulat','dale insulation')) return 'Drywall & Insulation';
-  if (has('cabinet','old city','tile','cella','floor','lvp','carpet','paint','universal','fireplace','archie','vanity','countertop','backsplash','trim package','interior door','fixture','appliance','hardware','garage door','farmer','sherwin')) return 'Finishes';
+  if (has('landscap','sod','driveway','sidewalk','flatwork','asphalt','paving','irrigation','mulch','hardscape','final grade','seeding','retaining wall')) return 'Exterior Finishes';
+  if (has('cabinet','old city','tile','cella','floor','lvp','carpet','paint','universal','fireplace','archie','vanity','countertop','backsplash','trim package','interior door','fixture','appliance','hardware','garage door','farmer','sherwin')) return 'Interior Finishes';
   // everything else = soft costs / general conditions
   return 'Permits, Design & Soft Costs';
 }
@@ -770,10 +821,9 @@ function parseGLRows(gl) {
 // Build phase rows from the live GL doc; falls back to plan-only (spent 0) if no GL yet.
 // Also returns the live Inventory-Asset balance = sum of all register rows.
 function computePhases(project) {
-  const plan = PHASE_PLAN[project] || [];
   const gl = S.get('gl_' + project, null);
   const spentByPhase = {};
-  plan.forEach(p => spentByPhase[p.phase] = 0);
+  PHASE_ORDER.forEach(ph => spentByPhase[ph] = 0);
   let hasData = false;
   let balance = null;
   const rows = parseGLRows(gl);
@@ -792,7 +842,18 @@ function computePhases(project) {
     hasData,
     balance,
     lastSync: gl?.lastSync || null,
-    rows: plan.map(p => ({ ...p, spent: Math.round((spentByPhase[p.phase]||0) * 100) / 100 }))
+    rows: PHASE_ORDER.map(ph => {
+      const st = phaseStageStatus(project, ph);
+      return {
+        phase: ph,
+        budget: phaseBudget(project, ph),
+        status: st.status,
+        stageDone: st.done,
+        stageTotal: st.total,
+        flag: PHASE_FLAGS[ph],
+        spent: Math.round((spentByPhase[ph] || 0) * 100) / 100
+      };
+    })
   };
 }
 
@@ -869,8 +930,7 @@ function getActiveProjects() {
   return Object.entries(PLAN_DATA)
     .filter(([key, p]) => {
       if (!p.sqftTotal) return false; // skip placeholder entries
-      const stages = S.get('stages_' + key, {});
-      return stages[STAGES.length - 1] !== 'complete'; // not "Project Complete"
+      return phaseStageStatus(key, 'Listing / Sale').status !== 'done'; // not yet closed/sold
     })
     .map(([key, p]) => ({ key, name: p.name }));
 }
@@ -891,49 +951,70 @@ function refreshCostCodeDropdown() {
     COST_CODES.map(c => `<option value="${c.code}">${c.label}</option>`).join('');
 }
 
-// ─── CONSTRUCTION STAGES ───────────────────────────────────────
-const STAGES = [
-  'Site Prep & Permits','Foundation Poured','Foundation Complete',
-  'Framing Started','Framing Complete','Roof Sheathing','Roof Complete',
-  'Windows & Doors Installed','Exterior Trim','Exterior Painting','Rough Plumbing','Rough Electrical','Rough HVAC',
-  'Insulation','Drywall Started','Drywall Hung','Drywall Taped','Drywall Complete',
-  'Paint – Prime Coat','Paint – Color Coat','Cabinets Delivered','Cabinets Installed',
-  'Countertops Templated','Countertops Installed','Flooring Started','Flooring Complete',
-  'Trim & Interior Doors','Fixtures & Hardware','Final Plumbing','Final Electrical',
-  'Final HVAC','Landscaping','Final Inspections','Certificate of Occupancy',
-  'Punch List','Project Complete'
-];
+// ─── CONSTRUCTION PHASES (grouped; status rolls into budget) ──
+// Editing is gated behind the admin PIN — toggle edit mode per page.
+let editMode = false;
+const PHASE_STATUS_LABEL = { done:'Complete', active:'In Progress', pending:'Not Started' };
+const PHASE_STATUS_COLOR = { done:'var(--green)', active:'var(--orange)', pending:'var(--text-muted)' };
 
-function cycleStage(project, idx) {
-  const stages = S.get('stages_' + project, {});
-  const cur = stages[idx] || 'none';
-  stages[idx] = cur === 'none' ? 'in-progress' : cur === 'in-progress' ? 'complete' : 'none';
-  S.set('stages_' + project, stages);
+function cycleSubStage(project, phaseIdx, stageIdx) {
+  if (!editMode) return;
+  const phaseName = PHASE_ORDER[phaseIdx];
+  const stageName = (PHASE_STAGES[phaseName] || [])[stageIdx];
+  if (!phaseName || !stageName) return;
+  const store = S.get('phasestages_' + project, {});
+  const key = phaseName + '::' + stageName;
+  const cur = store[key] || 'none';
+  store[key] = cur === 'none' ? 'in-progress' : cur === 'in-progress' ? 'complete' : 'none';
+  S.set('phasestages_' + project, store);
   renderStages(project);
+  renderPhaseBudget(project);
+}
+
+function toggleEditMode(project) {
+  if (editMode) { editMode = false; renderStages(project); renderPhaseBudget(project); return; }
+  requireAdminThen(() => { editMode = true; renderStages(project); renderPhaseBudget(project); });
 }
 
 function renderStages(project) {
-  const stages = S.get('stages_' + project, {});
   const container = document.getElementById('stages-' + project);
   if (!container) return;
-  let done = 0, wip = 0;
-  container.innerHTML = STAGES.map((name, i) => {
-    const s = stages[i] || 'none';
-    if (s === 'complete')    done++;
-    if (s === 'in-progress') wip++;
-    const icon  = s === 'complete' ? '✓' : s === 'in-progress' ? '●' : '';
-    const label = s === 'complete' ? 'Complete' : s === 'in-progress' ? 'In Progress' : '';
-    return `<div class="stage-item ${s}" onclick="cycleStage('${project}',${i})" title="Click to cycle status">
-      <div class="stage-dot">${icon}</div>
-      <div class="stage-name">${name}</div>
-      ${label ? `<span class="stage-badge">${label}</span>` : ''}
+  const store = S.get('phasestages_' + project, {});
+  let totalDone = 0, totalStages = 0;
+  container.innerHTML = PHASE_ORDER.map((ph, pi) => {
+    const st = phaseStageStatus(project, ph);
+    totalDone += st.done; totalStages += st.total;
+    const color = PHASE_STATUS_COLOR[st.status];
+    const stagesHtml = PHASE_STAGES[ph].map((name, si) => {
+      const s = store[ph + '::' + name] || 'none';
+      const icon = s === 'complete' ? '✓' : s === 'in-progress' ? '●' : '';
+      const click = editMode
+        ? ` onclick="cycleSubStage('${project}',${pi},${si})" title="Click to cycle status"`
+        : '';
+      return `<div class="stage-item ${s}${editMode ? '' : ' locked'}"${click}>
+        <div class="stage-dot">${icon}</div>
+        <div class="stage-name">${name}</div>
+      </div>`;
+    }).join('');
+    return `<div class="phase-group">
+      <div class="phase-group-header">
+        <span class="phase-group-title" style="border-left:3px solid ${color};">${ph}</span>
+        <span class="phase-group-count" style="color:${color};">${st.done}/${st.total} · ${PHASE_STATUS_LABEL[st.status]}</span>
+      </div>
+      <div class="stages-grid">${stagesHtml}</div>
     </div>`;
   }).join('');
   const badge = document.getElementById('stage-badge-' + project);
   if (badge) {
-    badge.textContent = `${done}/${STAGES.length} Complete`;
-    badge.className = done === STAGES.length ? 'badge badge-green' : wip > 0 ? 'badge badge-gold' : 'badge badge-gray';
+    badge.textContent = `${totalDone}/${totalStages} stages`;
+    badge.className = totalStages && totalDone === totalStages ? 'badge badge-green' : totalDone > 0 ? 'badge badge-gold' : 'badge badge-gray';
   }
+  const editBtn = document.getElementById('stage-edit-' + project);
+  if (editBtn) { editBtn.textContent = editMode ? '✓ Done Editing' : '🔒 Edit (Admin)'; editBtn.classList.toggle('on', editMode); }
+  const hint = document.getElementById('stage-hint-' + project);
+  if (hint) hint.textContent = editMode
+    ? 'Click a stage: once = In Progress · again = Complete · again = Reset. Phase status flows into the budget below.'
+    : 'Unlock “Edit (Admin)” to update phase progress.';
 }
 
 // ─── BUDGET ────────────────────────────────────────────────────
@@ -1468,7 +1549,7 @@ function renderPhaseBudget(project) {
       </div>
       <div class="table-wrap"><table class="budget-line-table">
         <thead><tr><th>Phase</th><th style="text-align:right;">Spent</th><th style="text-align:right;">Budget</th><th>Status</th></tr></thead>
-        <tbody>${phases.map(p => {
+        <tbody>${phases.map((p, i) => {
           const pct = p.budget > 0 ? Math.min(100, Math.round(p.spent/p.budget*100)) : 0;
           const over = p.spent > p.budget;
           return `<tr>
@@ -1476,8 +1557,14 @@ function renderPhaseBudget(project) {
               <div class="phase-bar-track"><div class="phase-bar-fill" style="width:${over?100:pct}%;background:${over?'var(--red)':statusColor[p.status]}"></div></div>
             </td>
             <td style="text-align:right;font-variant-numeric:tabular-nums;${over?'color:var(--red);font-weight:600;':''}">${fmt(p.spent)}</td>
-            <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-muted);">${fmt(p.budget)}</td>
-            <td><span style="color:${statusColor[p.status]};font-weight:600;text-transform:capitalize;font-size:0.8rem;">${p.status}</span>${p.flag?`<div style="font-size:0.7rem;color:var(--text-muted);">${p.flag}</div>`:''}</td>
+            <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-muted);">${editMode
+              ? `<input type="number" class="alloc-input" value="${p.budget}" onchange="savePhaseBudget('${project}',${i},this.value)">`
+              : fmt(p.budget)}</td>
+            <td>
+              <span style="color:${statusColor[p.status]};font-weight:700;font-size:0.8rem;">${PHASE_STATUS_LABEL[p.status]}</span>
+              <span style="color:var(--text-muted);font-size:0.72rem;"> ${p.stageDone}/${p.stageTotal}</span>
+              ${p.flag?`<div style="font-size:0.7rem;color:var(--text-muted);">${p.flag}</div>`:''}
+            </td>
           </tr>`;
         }).join('')}
         <tr class="total-row"><td>TOTAL SPENT TO DATE</td><td style="text-align:right;">${fmt(totalSpent)}</td><td style="text-align:right;">${fmt(totalBudget)}</td><td></td></tr>
@@ -1597,12 +1684,32 @@ function saveBudget(proj, name) {
   toast(`Budget updated for ${name}.`);
 }
 
+// Save an admin-edited phase allocation (override stored in phasebudget_<project>).
+function savePhaseBudget(project, phaseIdx, value) {
+  const phaseName = PHASE_ORDER[phaseIdx];
+  if (!phaseName) return;
+  const ov = S.get('phasebudget_' + project, {});
+  ov[phaseName] = parseFloat(value) || 0;
+  S.set('phasebudget_' + project, ov);
+  renderPhaseBudget(project);
+  renderBudget(project);
+}
+
 // ─── ADMIN PIN ─────────────────────────────────────────────────
-let pinBuf='', pinTarget='admin', adminUnlocked=false;
+let pinBuf='', pinTarget='admin', adminUnlocked=false, pinCallback=null;
 
 function requireAdmin(view) {
   if (adminUnlocked) { switchTab(view); return; }
-  pinTarget=view; pinBuf='';
+  pinCallback=null; pinTarget=view; pinBuf='';
+  document.getElementById('pin-error').textContent='';
+  updatePinDisplay();
+  document.getElementById('pin-modal').style.display='flex';
+}
+
+// Like requireAdmin but runs a callback on unlock instead of switching tabs.
+function requireAdminThen(cb) {
+  if (adminUnlocked) { cb(); return; }
+  pinCallback=cb; pinBuf='';
   document.getElementById('pin-error').textContent='';
   updatePinDisplay();
   document.getElementById('pin-modal').style.display='flex';
@@ -1616,7 +1723,7 @@ function pinPress(k) {
   updatePinDisplay();
   const exp = getAdminPin();
   if (pinBuf.length>=exp.length) {
-    if (pinBuf===exp) { closePinModal(); adminUnlocked=true; switchTab(pinTarget); }
+    if (pinBuf===exp) { closePinModal(); adminUnlocked=true; if (pinCallback) { const cb=pinCallback; pinCallback=null; cb(); } else switchTab(pinTarget); }
     else { document.getElementById('pin-error').textContent='Incorrect PIN'; pinBuf=''; updatePinDisplay(); }
   }
 }
