@@ -598,8 +598,8 @@ function handleFirestoreUpdate(key) {
   else if (key === 'qb_balance_326')  { renderBudget('326'); renderProjectDetail('326'); }
   else if (key === 'gl_330')          { renderPhaseBudget('330'); renderBudget('330'); }
   else if (key === 'gl_326')          { renderPhaseBudget('326'); renderBudget('326'); }
-  else if (key === 'phasestages_330') { renderStages('330'); renderPhaseBudget('330'); }
-  else if (key === 'phasestages_326') { renderStages('326'); renderPhaseBudget('326'); }
+  else if (key === 'phasestages_330') { renderStages('330'); renderPhaseBudget('330'); renderProjectDetail('330'); }
+  else if (key === 'phasestages_326') { renderStages('326'); renderPhaseBudget('326'); renderProjectDetail('326'); }
   else if (key === 'phasebudget_330') { renderPhaseBudget('330'); renderBudget('330'); }
   else if (key === 'phasebudget_326') { renderPhaseBudget('326'); renderBudget('326'); }
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); }
@@ -762,6 +762,24 @@ function phaseBudget(project, phaseName) {
   const ov = S.get('phasebudget_' + project, {});
   const v = ov[phaseName];
   return (v === undefined || v === null || v === '') ? (PHASE_BUDGET_DEFAULT[project]?.[phaseName] || 0) : Number(v);
+}
+
+// Auto-derive the "Current Phase" header label from stage progress: the leading
+// edge of active construction work. Listing/Sale runs in parallel (spec homes
+// list mid-build) so it's excluded from the construction current-phase.
+function currentPhaseLabel(project) {
+  const constr = PHASE_ORDER.filter(ph => ph !== 'Listing / Sale');
+  let latestActive = null, allDone = true;
+  constr.forEach(ph => {
+    const st = phaseStageStatus(project, ph).status;
+    if (st === 'active') latestActive = ph;
+    if (st !== 'done') allDone = false;
+  });
+  if (latestActive) return latestActive;
+  if (allDone) return phaseStageStatus(project, 'Listing / Sale').status === 'done'
+    ? 'Sold / Closed' : 'Construction complete — listed for sale';
+  const next = constr.find(ph => phaseStageStatus(project, ph).status !== 'done');
+  return next ? next + ' (next up)' : 'Not started';
 }
 
 // Keyword → phase categorizer (mirrors the reconciliation logic). Order matters.
@@ -969,6 +987,7 @@ function cycleSubStage(project, phaseIdx, stageIdx) {
   S.set('phasestages_' + project, store);
   renderStages(project);
   renderPhaseBudget(project);
+  renderProjectDetail(project);
 }
 
 function toggleEditMode(project) {
@@ -1407,10 +1426,10 @@ function renderProjectDetail(project) {
           <span style="font-size:0.72rem;color:var(--text-muted);">${p.address}</span>
         </div>
       </div>
-      ${(p.targetCompletion || p.currentPhase) ? `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
         ${p.targetCompletion ? `<div style="flex:1;min-width:180px;background:var(--surface2);border-radius:8px;padding:10px 14px;"><div class="s-lbl">🎯 Target Completion</div><div style="font-weight:700;color:var(--gold);margin-top:2px;">${p.targetCompletion}</div></div>` : ''}
-        ${p.currentPhase ? `<div style="flex:2;min-width:200px;background:var(--surface2);border-radius:8px;padding:10px 14px;"><div class="s-lbl">🔨 Current Phase</div><div style="font-weight:600;margin-top:2px;">${p.currentPhase}</div></div>` : ''}
-      </div>` : ''}
+        <div style="flex:2;min-width:200px;background:var(--surface2);border-radius:8px;padding:10px 14px;"><div class="s-lbl">🔨 Current Phase <span style="font-size:0.62rem;opacity:0.6;">(auto)</span></div><div style="font-weight:600;margin-top:2px;">${currentPhaseLabel(project)}</div></div>
+      </div>
       ${p.listingDesc ? `<div style="background:var(--surface2);border-left:3px solid var(--gold);border-radius:0 6px 6px 0;padding:12px 14px;font-size:0.82rem;color:var(--text-muted);line-height:1.6;margin-bottom:14px;">${p.listingDesc}</div>` : ''}
       <div class="spec-grid">
         <div class="spec-item"><div class="s-val">${p.sqftTotal.toLocaleString()}</div><div class="s-lbl">Finished sqft</div></div>
