@@ -912,8 +912,12 @@ const MATERIALS = {
     { item: 'Downspouts (bill pending)', vendor: 'Robbins Siding & Guttering', cost: 0, status: 'ordered', neededBy: '2026-06-30' },
     { item: 'Garage door', vendor: 'Farmer Garage Door', cost: 5400, status: 'ordered', neededBy: '2026-07-01' },
   ],
-  '326': []  // same template — data TBD
+  '326': []  // populated from the 330 template just below
 };
+// 326 is the mirror plan — seed its materials from the 330 list (same line
+// items, vendors, and estimated costs), reset to not-ordered with dates cleared.
+// Per-item edits still save to materials_326 and override this template.
+MATERIALS['326'] = MATERIALS['330'].map(m => ({ ...m, status: 'not-ordered', neededBy: '' }));
 
 // ─── COLOR & FINISH SELECTIONS (LOCKED IN) ────────────────────
 const FINISHES = {
