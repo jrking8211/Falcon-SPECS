@@ -262,6 +262,7 @@
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-primary btn-sm" onclick="exportJournalCSV()">↓ Export QB Journal CSV</button>
         <button class="btn btn-secondary btn-sm" onclick="renderAdminEntries()">Refresh</button>
+        <button class="btn btn-danger btn-sm" onclick="clearAllEntries()">✕ Clear All Entries</button>
       </div>
     </div>
     <div class="info-box">
@@ -823,6 +824,14 @@ function renderAdminEntries() {
         <td><button onclick="deleteEntry(${l.id})" class="btn btn-danger btn-sm">✕</button></td>
       </tr>`).join('')}</tbody>
     </table></div>`;
+}
+
+function clearAllEntries() {
+  if (!confirm('Delete ALL time entries? This cannot be undone.')) return;
+  S.set('timelogs', []);
+  renderAdminEntries();
+  renderMyEntries();
+  toast('All time entries cleared.');
 }
 
 function deleteEntry(id) {
