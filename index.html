@@ -84,6 +84,9 @@
     .edit-toggle:hover { border-color: var(--gold); }
     .edit-toggle.on { background: var(--green); color: #fff; border-color: var(--green); }
     .alloc-input { width: 92px; text-align: right; background: var(--surface2); border: 1px solid var(--gold); border-radius: 5px; padding: 4px 6px; color: var(--text); font-variant-numeric: tabular-nums; outline: none; }
+    .mat-input { width: 100%; min-width: 90px; background: var(--surface2); border: 1px solid var(--gold); border-radius: 5px; padding: 4px 6px; color: var(--text); outline: none; font-size: 0.82rem; }
+    .mat-status.clickable { cursor: pointer; }
+    .mat-status.clickable:hover { outline: 1px solid var(--gold); }
     .click-hint { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; }
 
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -527,7 +530,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -602,6 +605,8 @@ function handleFirestoreUpdate(key) {
   else if (key === 'phasestages_326') { renderStages('326'); renderPhaseBudget('326'); renderProjectDetail('326'); }
   else if (key === 'phasebudget_330') { renderPhaseBudget('330'); renderBudget('330'); }
   else if (key === 'phasebudget_326') { renderPhaseBudget('326'); renderBudget('326'); }
+  else if (key === 'materials_330')   renderMaterials('330');
+  else if (key === 'materials_326')   renderMaterials('326');
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
 }
@@ -991,8 +996,9 @@ function cycleSubStage(project, phaseIdx, stageIdx) {
 }
 
 function toggleEditMode(project) {
-  if (editMode) { editMode = false; renderStages(project); renderPhaseBudget(project); return; }
-  requireAdminThen(() => { editMode = true; renderStages(project); renderPhaseBudget(project); });
+  const apply = () => { renderStages(project); renderPhaseBudget(project); renderMaterials(project); renderProjectDetail(project); };
+  if (editMode) { editMode = false; apply(); return; }
+  requireAdminThen(() => { editMode = true; apply(); });
 }
 
 function renderStages(project) {
@@ -1593,39 +1599,155 @@ function renderPhaseBudget(project) {
 }
 
 // ─── MATERIALS STATUS ─────────────────────────────────────────
+const MAT_STATUS_ORDER = ['not-ordered','bid-in','ordered','on-site','installed'];
+
+// Merge stored per-item overrides (materials_<project>) over the base MATERIALS.
+function getMaterials(project) {
+  const base = MATERIALS[project] || [];
+  const ov = S.get('materials_' + project, {});
+  return base.map((m, i) => ({ ...m, ...(ov[i] || {}), _i: i }));
+}
+
+function saveMaterialField(project, idx, field, value) {
+  const ov = S.get('materials_' + project, {});
+  ov[idx] = ov[idx] || {};
+  ov[idx][field] = field === 'cost' ? (parseFloat(value) || 0) : value;
+  S.set('materials_' + project, ov);
+  renderMaterials(project);
+}
+
+function cycleMaterialStatus(project, idx) {
+  if (!editMode) return;
+  const cur = getMaterials(project)[idx]?.status;
+  const next = MAT_STATUS_ORDER[(MAT_STATUS_ORDER.indexOf(cur) + 1) % MAT_STATUS_ORDER.length];
+  saveMaterialField(project, idx, 'status', next);
+}
+
+// ── QB vendor matching: tie live GL spend to material vendors by name ──
+const GENERIC_VENDOR_WORDS = new Set(['the','and','llc','inc','co','company','services','service','building','materials','material','design','group','enterprises','one','plumbing','electric','electrical','painting','flooring','construction','supply','center','tbd','confirm','net','terms']);
+function normVendor(s) { return (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+function vendorTokens(s) { return normVendor(s).split(' ').filter(t => t.length >= 4 && !GENERIC_VENDOR_WORDS.has(t)); }
+
+// Sum QB GL spend grouped by payee → { normKey: {name, total} }.
+function glVendorTotals(project) {
+  const rows = parseGLRows(S.get('gl_' + project, null)) || [];
+  const map = {};
+  rows.forEach(r => {
+    const name = (r.payee || '').trim();
+    const key = normVendor(name);
+    if (!key) return;
+    (map[key] = map[key] || { name, total: 0 }).total += Number(r.amount) || 0;
+  });
+  return map;
+}
+
+// Total QB actual for a material vendor (sum of GL payees sharing a token).
+// Returns {total, keys} or null when no distinctive token / no match.
+function qbActualForVendor(vendor, glTotals) {
+  const toks = vendorTokens(vendor);
+  if (!toks.length) return null;
+  let total = 0; const keys = [];
+  Object.entries(glTotals).forEach(([k, v]) => {
+    const payeeWords = normVendor(v.name).split(' '); // whole-word match (witt ≠ dewitt)
+    if (toks.some(t => payeeWords.includes(t))) { total += v.total; keys.push(k); }
+  });
+  return keys.length ? { total: Math.round(total * 100) / 100, keys } : null;
+}
+
 function renderMaterials(project) {
   const el = document.getElementById('materials-' + project);
   if (!el) return;
-  const items = MATERIALS[project] || [];
+  const editBtn = `<button id="mat-edit-${project}" class="edit-toggle${editMode?' on':''}" onclick="toggleEditMode('${project}')">${editMode?'✓ Done Editing':'🔒 Edit (Admin)'}</button>`;
+  const items = getMaterials(project);
   if (!items.length) {
-    el.innerHTML = `<div class="card"><div class="card-title">Materials Status</div><div class="empty-state">Same template as 330 — material line items to be added for this project.</div></div>`;
+    el.innerHTML = `<div class="card"><div class="section-header"><div class="card-title">Materials Status</div>${editBtn}</div><div class="empty-state">Same template as 330 — material line items to be added for this project.</div></div>`;
     return;
   }
   const order = { 'not-ordered':0, 'bid-in':1, 'ordered':2, 'on-site':3, 'installed':4 };
   const counts = {};
   items.forEach(i => counts[i.status] = (counts[i.status]||0)+1);
   const committed = items.reduce((s,i) => s + (i.cost||0), 0);
-  const sorted = items.slice().sort((a,b) => order[a.status]-order[b.status] || new Date(a.neededBy)-new Date(b.neededBy));
-  const lbl = s => s.replace('-',' ');
+  const lbl = s => (s||'').replace('-',' ');
+  const glTotals = glVendorTotals(project);
+
+  // Stable order while editing; status/date sort in view mode.
+  const rows = editMode ? items
+    : items.slice().sort((a,b) => order[a.status]-order[b.status] || new Date(a.neededBy||0)-new Date(b.neededBy||0));
+
+  const seenVendor = {};
+  const body = rows.map(i => {
+    const vKey = normVendor(i.vendor);
+    const m = qbActualForVendor(i.vendor, glTotals);
+    let actualCell;
+    if (!m) actualCell = '<span style="color:var(--text-muted);">—</span>';
+    else if (seenVendor[vKey]) actualCell = '<span style="color:var(--text-muted);font-size:0.7rem;">↑ vendor total</span>';
+    else { seenVendor[vKey] = true; actualCell = `<span style="color:var(--blue);font-variant-numeric:tabular-nums;">${fmt(m.total)}</span>`; }
+
+    const itemCell   = editMode ? `<input class="mat-input" value="${esc(i.item)}" onchange="saveMaterialField('${project}',${i._i},'item',this.value)">` : i.item;
+    const vendorCell = editMode ? `<input class="mat-input" value="${esc(i.vendor||'')}" onchange="saveMaterialField('${project}',${i._i},'vendor',this.value)">` : `<span style="color:var(--text-muted);font-size:0.8rem;">${i.vendor}</span>`;
+    const costCell   = editMode ? `<input type="number" class="alloc-input" value="${i.cost||0}" onchange="saveMaterialField('${project}',${i._i},'cost',this.value)">` : (i.cost?fmt(i.cost):'—');
+    const statusCell = `<span class="mat-status ms-${i.status}${editMode?' clickable':''}"${editMode?` onclick="cycleMaterialStatus('${project}',${i._i})" title="Click to cycle status"`:''}>${lbl(i.status)}</span>`;
+    const neededCell = editMode ? `<input class="mat-input" value="${esc(i.neededBy||'')}" onchange="saveMaterialField('${project}',${i._i},'neededBy',this.value)" placeholder="YYYY-MM-DD">` : `<span style="color:var(--text-muted);font-size:0.8rem;white-space:nowrap;">${i.neededBy||'—'}</span>`;
+
+    return `<tr>
+      <td>${itemCell}</td>
+      <td>${vendorCell}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${costCell}</td>
+      <td style="text-align:right;">${actualCell}</td>
+      <td>${statusCell}</td>
+      <td>${neededCell}</td>
+    </tr>`;
+  }).join('');
+
+  // Vendor roll-up: materials estimate vs QB actual vs variance.
+  const byVendor = {};
+  items.forEach(i => {
+    const k = normVendor(i.vendor) || '—';
+    (byVendor[k] = byVendor[k] || { name: i.vendor || '—', est: 0 }).est += i.cost || 0;
+  });
+  const matchedKeys = new Set();
+  const rollupRows = Object.values(byVendor).map(v => {
+    const m = qbActualForVendor(v.name, glTotals);
+    if (m) m.keys.forEach(k => matchedKeys.add(k));
+    const variance = m ? Math.round((m.total - v.est) * 100) / 100 : null;
+    return { name: v.name, est: v.est, actual: m ? m.total : null, variance };
+  }).sort((a,b) => (b.actual||0) - (a.actual||0) || b.est - a.est);
+  const otherQb = Object.entries(glTotals).filter(([k]) => !matchedKeys.has(k)).reduce((s,[,v]) => s + v.total, 0);
+
+  const rollup = `
+    <div style="margin-top:18px;">
+      <div style="font-weight:700;color:var(--gold);font-size:0.82rem;margin-bottom:8px;">Vendor Spend — Materials Estimate vs QB Actual</div>
+      <div class="table-wrap"><table class="budget-line-table">
+        <thead><tr><th>Vendor</th><th style="text-align:right;">Est (materials)</th><th style="text-align:right;">QB Actual</th><th style="text-align:right;">Variance</th></tr></thead>
+        <tbody>${rollupRows.map(r => `<tr>
+          <td>${r.name}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-muted);">${r.est?fmt(r.est):'—'}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--blue);">${r.actual===null?'—':fmt(r.actual)}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;color:${r.variance===null?'var(--text-muted)':r.variance>0?'var(--red)':'var(--green)'};">${r.variance===null?'—':(r.variance>0?'+':'')+fmt(r.variance)}</td>
+        </tr>`).join('')}
+        ${otherQb>0?`<tr><td style="color:var(--text-muted);font-style:italic;">Other QB spend (lot, soft costs, labor — not a material vendor)</td><td></td><td style="text-align:right;color:var(--text-muted);font-variant-numeric:tabular-nums;">${fmt(otherQb)}</td><td></td></tr>`:''}
+        </tbody>
+      </table></div>
+      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;font-style:italic;">QB Actual matched to vendors by name; shown once per vendor. Edit a vendor name to fix a mismatch.</div>
+    </div>`;
+
   el.innerHTML = `
     <div class="card">
       <div class="section-header">
         <div class="card-title">Materials Status — ${items.length} Items</div>
-        <span class="badge badge-gold">${fmt(committed)} committed</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="badge badge-gold">${fmt(committed)} committed</span>
+          ${editBtn}
+        </div>
       </div>
       <div class="status-legend">
         ${['installed','on-site','ordered','bid-in','not-ordered'].map(s => `<span><span class="mat-status ms-${s}">${lbl(s)}</span> ${counts[s]||0}</span>`).join('')}
       </div>
       <div class="table-wrap"><table class="budget-line-table">
-        <thead><tr><th>Item</th><th>Vendor</th><th style="text-align:right;">Cost</th><th>Status</th><th>Needed By</th></tr></thead>
-        <tbody>${sorted.map(i => `<tr>
-          <td>${i.item}</td>
-          <td style="color:var(--text-muted);font-size:0.8rem;">${i.vendor}</td>
-          <td style="text-align:right;font-variant-numeric:tabular-nums;">${i.cost?fmt(i.cost):'—'}</td>
-          <td><span class="mat-status ms-${i.status}">${lbl(i.status)}</span></td>
-          <td style="color:var(--text-muted);font-size:0.8rem;white-space:nowrap;">${i.neededBy||'—'}</td>
-        </tr>`).join('')}</tbody>
+        <thead><tr><th>Item</th><th>Vendor</th><th style="text-align:right;">Est Cost</th><th style="text-align:right;">QB Actual</th><th>Status</th><th>Needed By</th></tr></thead>
+        <tbody>${body}</tbody>
       </table></div>
+      ${rollup}
     </div>`;
 }
 
