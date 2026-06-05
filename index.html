@@ -1066,7 +1066,9 @@ function renderBudget(project) {
   const qb = glComputed.balance ?? qbDoc?.balance ?? b.qbBalance ?? QB_INVENTORY[project].balance;
   const syncText2 = glComputed.lastSync ? `QB synced ${glComputed.lastSync}`
                   : qbDoc?.lastSync ? `QB synced ${qbDoc.lastSync}` : null;
-  const budget = b.totalBudget || 0;
+  // Total Cost Budget = sum of the phase budget allocations (the "budget actual"
+  // section), so the header always matches and tracks any phase edits.
+  const budget = PHASE_ORDER.reduce((s, ph) => s + phaseBudget(project, ph), 0);
   const salePrice = b.projectedSalePrice || 0;
   const projectedProfit = salePrice - budget;
   const costRemaining = budget - qb;
@@ -1088,7 +1090,7 @@ function renderBudget(project) {
         <div class="budget-item">
           <div class="b-label">Total Cost Budget</div>
           <div class="b-value">${budget ? fmt(budget) : '—'}</div>
-          <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px;">From plan estimate</div>
+          <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px;">Sum of phase budget</div>
         </div>
         <div class="budget-item">
           <div class="b-label">Cost Remaining</div>
@@ -1803,7 +1805,8 @@ function renderBudgetEditor() {
         </div>
         <div class="form-group">
           <label>Total Cost Budget</label>
-          <input type="number" id="b-${p.k}-totalBudget" value="${b.totalBudget||''}" placeholder="0" min="0">
+          <input type="number" value="${PHASE_ORDER.reduce((s,ph)=>s+phaseBudget(p.k,ph),0)}" disabled title="Auto-summed from the Phase Budget allocations">
+          <span style="font-size:0.68rem;color:var(--text-muted);">Auto = sum of phase budget (edit phases to change)</span>
         </div>
         <div class="form-group">
           <label>Projected Sale Price</label>
@@ -1816,7 +1819,7 @@ function renderBudgetEditor() {
 }
 
 function saveBudget(proj, name) {
-  const fields = ['qbBalance','totalBudget','projectedSalePrice'];
+  const fields = ['qbBalance','projectedSalePrice'];
   const b = {};
   fields.forEach(f => { b[f] = parseFloat(document.getElementById(`b-${proj}-${f}`)?.value)||0; });
   b.lastSync = new Date().toISOString().slice(0,10);
