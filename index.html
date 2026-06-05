@@ -506,9 +506,8 @@
 <div class="modal-overlay" id="emp-modal" style="display:none;">
   <div class="modal" style="width:340px;">
     <h2>Add Employee</h2>
-    <p>Set name, PIN, and hourly rate</p>
+    <p>Set name and hourly rate</p>
     <input class="emp-input" id="emp-name" type="text" placeholder="Full Name" autocomplete="off">
-    <input class="emp-input" id="emp-pin-field" type="password" placeholder="PIN (4–6 digits)" maxlength="6" autocomplete="off">
     <input class="emp-input" id="emp-rate" type="number" placeholder="Hourly Rate (e.g. 22.00)" min="0" step="0.01">
     <div style="display:flex;gap:8px;margin-top:4px;">
       <button class="btn btn-primary" style="flex:1;" onclick="saveEmployee()">Save</button>
@@ -1378,7 +1377,6 @@ const csvQ = s => `"${String(s).replace(/"/g,'""')}"`;
 // ─── EMPLOYEES ─────────────────────────────────────────────────
 function showAddEmployee() {
   document.getElementById('emp-name').value = '';
-  document.getElementById('emp-pin-field').value = '';
   document.getElementById('emp-rate').value = '';
   document.getElementById('emp-error').textContent = '';
   document.getElementById('emp-modal').style.display = 'flex';
@@ -1386,14 +1384,12 @@ function showAddEmployee() {
 
 function saveEmployee() {
   const name = document.getElementById('emp-name').value.trim();
-  const pin  = document.getElementById('emp-pin-field').value.trim();
   const rate = parseFloat(document.getElementById('emp-rate').value) || 0;
   const err  = document.getElementById('emp-error');
   if (!name)               { err.textContent = 'Name is required.'; return; }
-  if (!/^\d{4,6}$/.test(pin)) { err.textContent = 'PIN must be 4–6 digits.'; return; }
   const emps = getEmployees();
   if (emps.find(e => e.name.toLowerCase() === name.toLowerCase())) { err.textContent = 'Employee already exists.'; return; }
-  emps.push({ name, pin, hourlyRate: rate });
+  emps.push({ name, hourlyRate: rate });
   S.set('employees', emps);
   document.getElementById('emp-modal').style.display = 'none';
   refreshEmployeeSelects();
@@ -1407,28 +1403,13 @@ function renderEmployeeList() {
   const emps = getEmployees();
   if (!emps.length) { container.innerHTML = '<div class="empty-state">No employees yet. Click "+ Add Employee" above.</div>'; return; }
   container.innerHTML = `<div class="table-wrap"><table class="data-table">
-    <thead><tr><th>Name</th><th>Hourly Rate</th><th>PIN</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Hourly Rate</th><th></th></tr></thead>
     <tbody>${emps.map((e,i)=>`<tr>
       <td>${e.name}</td>
       <td>${e.hourlyRate ? fmt(e.hourlyRate)+'/hr' : '—'}</td>
-      <td>
-        <input type="password" value="${e.pin}" id="pin-emp-${i}"
-          style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);width:90px;outline:none;"
-          maxlength="6">
-        <button onclick="saveEmpPin(${i})" class="btn btn-secondary btn-sm" style="margin-left:6px;">Save</button>
-      </td>
       <td><button onclick="removeEmployee(${i})" class="btn btn-danger btn-sm">Remove</button></td>
     </tr>`).join('')}</tbody>
   </table></div>`;
-}
-
-function saveEmpPin(idx) {
-  const newPin = document.getElementById('pin-emp-' + idx)?.value.trim();
-  if (!/^\d{4,6}$/.test(newPin)) { toast('PIN must be 4–6 digits.', 'error'); return; }
-  const emps = getEmployees();
-  emps[idx].pin = newPin;
-  S.set('employees', emps);
-  toast(`PIN updated for ${emps[idx].name}.`);
 }
 
 function removeEmployee(idx) {
