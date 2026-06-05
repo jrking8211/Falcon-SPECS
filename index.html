@@ -379,7 +379,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -404,9 +404,16 @@ function initFirebase() {
   FS_KEYS.forEach(key => {
     db.collection('dashboard').doc(key).onSnapshot(snap => {
       if (!snap.exists) return;
+      // QB balance docs written by Make.com have a different structure
+      if (key.startsWith('qb_balance_')) {
+        const data = snap.data();
+        if (!data || data.balance === undefined) return;
+        S.setLocal(key, { balance: data.balance, lastSync: data.lastSync });
+        handleFirestoreUpdate(key);
+        return;
+      }
       const incoming = snap.data()?.value;
       if (incoming === undefined) return;
-      // Only update if data actually changed (avoid re-render loops)
       if (JSON.stringify(S.get(key, null)) === JSON.stringify(incoming)) return;
       S.setLocal(key, incoming);
       handleFirestoreUpdate(key);
@@ -425,12 +432,14 @@ function initFirebase() {
 }
 
 function handleFirestoreUpdate(key) {
-  if      (key === 'stages_330')  renderStages('330');
-  else if (key === 'stages_326')  renderStages('326');
-  else if (key === 'budget_330')  { renderBudget('330'); renderProjectDetail('330'); }
-  else if (key === 'budget_326')  { renderBudget('326'); renderProjectDetail('326'); }
-  else if (key === 'employees')   { refreshEmployeeSelects(); renderEmployeeList(); }
-  else if (key === 'timelogs')    { renderMyEntries(); renderAdminEntries(); }
+  if      (key === 'stages_330')      renderStages('330');
+  else if (key === 'stages_326')      renderStages('326');
+  else if (key === 'budget_330')      { renderBudget('330'); renderProjectDetail('330'); }
+  else if (key === 'budget_326')      { renderBudget('326'); renderProjectDetail('326'); }
+  else if (key === 'qb_balance_330')  { renderBudget('330'); renderProjectDetail('330'); }
+  else if (key === 'qb_balance_326')  { renderBudget('326'); renderProjectDetail('326'); }
+  else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); }
+  else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
 }
 
 // ─── QB REAL DATA (from balance sheet pulled 2026-06-04) ────────
@@ -622,7 +631,10 @@ function getDefaultBudget(p) {
 function renderBudget(project) {
   const stored = S.get('budget_' + project, null);
   const b = stored || getDefaultBudget(project);
-  const qb = b.qbBalance || QB_INVENTORY[project].balance;
+  // Prefer Make.com nightly sync balance, fall back to QB_INVENTORY hardcoded value
+  const qbDoc = S.get('qb_balance_' + project, null);
+  const qb = qbDoc?.balance || b.qbBalance || QB_INVENTORY[project].balance;
+  const syncText2 = qbDoc?.lastSync ? `QB synced ${qbDoc.lastSync}` : null;
   const budget = b.totalBudget || 0;
   const salePrice = b.projectedSalePrice || 0;
   const projectedProfit = salePrice - budget;
@@ -634,7 +646,7 @@ function renderBudget(project) {
     <div class="card">
       <div class="section-header">
         <div class="card-title">Budget Snapshot</div>
-        <span class="qb-live">● QB Live</span>
+        <span class="qb-live">● QB Live${syncText2 ? ' · ' + syncText2 : ''}</span>
       </div>
       <div class="budget-grid">
         <div class="budget-item">
