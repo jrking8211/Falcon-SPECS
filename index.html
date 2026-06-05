@@ -1770,7 +1770,12 @@ function renderMaterials(project) {
     const variance = m ? Math.round((m.total - v.est) * 100) / 100 : null;
     return { name: v.name, est: v.est, actual: m ? m.total : null, variance };
   }).sort((a,b) => (b.actual||0) - (a.actual||0) || b.est - a.est);
-  const otherQb = Object.entries(glTotals).filter(([k]) => !matchedKeys.has(k)).reduce((s,[,v]) => s + v.total, 0);
+  // Named QB vendors not tied to a material line (labor subs, lot, soft costs).
+  const otherVendors = Object.entries(glTotals)
+    .filter(([k]) => !matchedKeys.has(k))
+    .map(([, v]) => ({ name: v.name, total: Math.round(v.total * 100) / 100 }))
+    .filter(v => Math.abs(v.total) >= 1)
+    .sort((a, b) => b.total - a.total);
 
   const rollup = `
     <div style="margin-top:18px;">
@@ -1782,12 +1787,21 @@ function renderMaterials(project) {
           <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-muted);">${r.est?fmt(r.est):'—'}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--blue);">${r.actual===null?'—':fmt(r.actual)}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;color:${r.variance===null?'var(--text-muted)':r.variance>0?'var(--red)':'var(--green)'};">${r.variance===null?'—':(r.variance>0?'+':'')+fmt(r.variance)}</td>
-        </tr>`).join('')}
-        ${otherQb>0?`<tr><td style="color:var(--text-muted);font-style:italic;">Other QB spend (lot, soft costs, labor — not a material vendor)</td><td></td><td style="text-align:right;color:var(--text-muted);font-variant-numeric:tabular-nums;">${fmt(otherQb)}</td><td></td></tr>`:''}
-        </tbody>
+        </tr>`).join('')}</tbody>
       </table></div>
-      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;font-style:italic;">QB Actual matched to vendors by name; shown once per vendor. Edit a vendor name to fix a mismatch.</div>
-    </div>`;
+    </div>
+    ${otherVendors.length ? `
+    <div style="margin-top:16px;">
+      <div style="font-weight:700;color:var(--gold);font-size:0.82rem;margin-bottom:8px;">Labor &amp; Other Vendors — QB Actual</div>
+      <div class="table-wrap"><table class="budget-line-table">
+        <thead><tr><th>Vendor</th><th style="text-align:right;">QB Actual</th></tr></thead>
+        <tbody>${otherVendors.map(v => `<tr>
+          <td>${v.name}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--blue);">${fmt(v.total)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>` : ''}
+    <div style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;font-style:italic;">QB Actual matched to vendors by name. Labor-only subs &amp; non-material spend (lot, soft costs) appear in the second table. Edit a material vendor name to fix a mismatch.</div>`;
 
   el.innerHTML = `
     <div class="card">
