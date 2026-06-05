@@ -382,10 +382,6 @@
         <select id="tl-employee" onchange="onEmployeeChange()"><option value="">Select Employee…</option></select>
       </div>
       <div class="form-group">
-        <label>PIN</label>
-        <input type="password" id="tl-pin" placeholder="Enter PIN" maxlength="6" autocomplete="off">
-      </div>
-      <div class="form-group">
         <label>Date</label>
         <input type="date" id="tl-date">
       </div>
@@ -567,7 +563,7 @@ const S = {
     }
   }
 };
-const getAdminPin = () => S.get('admin_pin', '1234');
+const getAdminPin = () => S.get('admin_pin', '8211');
 
 // ─── SITE GATE — one PIN unlocks the whole dashboard ──────────
 // Once unlocked (persisted on this device), edit buttons are a plain
@@ -1186,7 +1182,6 @@ function refreshEmployeeSelects() {
 
 function submitTimeLog() {
   const emp      = document.getElementById('tl-employee').value.trim();
-  const pin      = document.getElementById('tl-pin').value.trim();
   const date     = document.getElementById('tl-date').value;
   const proj     = document.getElementById('tl-project').value;
   const costcode = document.getElementById('tl-costcode').value;
@@ -1195,11 +1190,8 @@ function submitTimeLog() {
   const rate     = parseFloat(document.getElementById('tl-rate').value) || 0;
   const desc     = document.getElementById('tl-desc').value.trim();
 
-  if (!emp || !pin || !date || !proj || !costcode || !st || !en) { toast('Please fill in all required fields including project and cost code.', 'error'); return; }
+  if (!emp || !date || !proj || !costcode || !st || !en) { toast('Please fill in all required fields including project and cost code.', 'error'); return; }
   if (rate <= 0) { toast('Please enter an hourly rate.', 'error'); return; }
-
-  const employee = getEmployees().find(e => e.name === emp);
-  if (!employee || employee.pin !== pin) { toast('Incorrect PIN — please try again.', 'error'); return; }
 
   const [sh,sm] = st.split(':').map(Number);
   const [eh,em] = en.split(':').map(Number);
@@ -1236,7 +1228,6 @@ function submitTimeLog() {
   document.getElementById('tl-start').value    = '';
   document.getElementById('tl-end').value      = '';
   document.getElementById('tl-desc').value     = '';
-  document.getElementById('tl-pin').value      = '';
   document.getElementById('tl-costcode').value = '';
 
   toast(`✓ ${hours.toFixed(2)} hrs / ${fmt(amount)} logged for ${emp}`);
