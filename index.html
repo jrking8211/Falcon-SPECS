@@ -87,6 +87,9 @@
     .mat-input { width: 100%; min-width: 90px; background: var(--surface2); border: 1px solid var(--gold); border-radius: 5px; padding: 4px 6px; color: var(--text); outline: none; font-size: 0.82rem; }
     .mat-status.clickable { cursor: pointer; }
     .mat-status.clickable:hover { outline: 1px solid var(--gold); }
+    .mini-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; padding: 3px 7px; color: var(--text); cursor: pointer; font-size: 0.78rem; }
+    .mini-btn:hover { border-color: var(--gold); }
+    .mini-btn.danger:hover { border-color: var(--red); color: var(--red); }
     .click-hint { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; }
 
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -530,7 +533,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -607,6 +610,8 @@ function handleFirestoreUpdate(key) {
   else if (key === 'phasebudget_326') { renderPhaseBudget('326'); renderBudget('326'); }
   else if (key === 'materials_330')   renderMaterials('330');
   else if (key === 'materials_326')   renderMaterials('326');
+  else if (key === 'finishes_330')    renderFinishes('330');
+  else if (key === 'finishes_326')    renderFinishes('326');
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
 }
@@ -1000,7 +1005,7 @@ function cycleSubStage(project, phaseIdx, stageIdx) {
 }
 
 function toggleEditMode(project) {
-  const apply = () => { renderStages(project); renderPhaseBudget(project); renderMaterials(project); renderProjectDetail(project); };
+  const apply = () => { renderStages(project); renderPhaseBudget(project); renderMaterials(project); renderFinishes(project); renderProjectDetail(project); };
   if (editMode) { editMode = false; apply(); return; }
   requireAdminThen(() => { editMode = true; apply(); });
 }
@@ -1759,37 +1764,92 @@ function renderMaterials(project) {
 
 // ─── COLOR & FINISH SELECTIONS ────────────────────────────────
 const SW_HEX = { '7551':'#EDE7D8','7006':'#EEEFE9','7603':'#5C7B7A','9178':'#3B4655','7036':'#D2C8B6' };
-function swChip(val) {
-  const m = val.match(/SW\s*(\d{4})/);
-  const hex = m ? SW_HEX[m[1]] : null;
-  return hex ? `<span class="finish-chip" style="background:${hex}"></span>` : '';
+
+// Color swatch: explicit item.hex wins, else derive from an "SW ####" code.
+function finishHex(item) {
+  if (item.hex && /^#?[0-9a-f]{3,8}$/i.test(item.hex.trim())) return item.hex.trim().startsWith('#') ? item.hex.trim() : '#'+item.hex.trim();
+  const m = (item.selection || '').match(/SW\s*(\d{4})/i);
+  return m && SW_HEX[m[1]] ? SW_HEX[m[1]] : null;
+}
+
+// Convert the original locked-in FINISHES structure into editable items.
+function finishesToItems(f) {
+  if (!f) return [];
+  const out = [];
+  (f.interior||[]).forEach(([label,sel]) => out.push({ category:'Interior Paint', label, selection:sel, hex:'', link:'' }));
+  (f.exterior||[]).forEach(([label,sel]) => out.push({ category:'Exterior Paint', label, selection:sel, hex:'', link:'' }));
+  (f.flooring||[]).forEach(([label,sel]) => out.push({ category:'Flooring', label, selection:sel, hex:'', link:'' }));
+  return out;
+}
+// Defaults: 330 from its locked-in selections; 326 mirrors the 330 template.
+const FINISH_DEFAULT = { '330': finishesToItems(FINISHES['330']), '326': finishesToItems(FINISHES['330']) };
+
+function getFinishes(project) {
+  return S.get('finishes_' + project, null) || (FINISH_DEFAULT[project] || []).map(i => ({ ...i }));
+}
+function saveFinishes(project, items) { S.set('finishes_' + project, items); renderFinishes(project); }
+function editFinishField(project, idx, field, value) {
+  const items = getFinishes(project);
+  if (!items[idx]) return;
+  items[idx][field] = value;
+  saveFinishes(project, items);
+}
+function addFinish(project) { const items = getFinishes(project); items.push({ category:'New Category', label:'', selection:'', hex:'', link:'' }); saveFinishes(project, items); }
+function deleteFinish(project, idx) { const items = getFinishes(project); items.splice(idx, 1); saveFinishes(project, items); }
+// Interim "AI later": open a web search for the selection's color code / link.
+function webSearchFinish(project, idx) {
+  const it = getFinishes(project)[idx];
+  if (!it || !it.selection) return;
+  window.open('https://www.google.com/search?q=' + encodeURIComponent(it.selection + ' paint color hex code'), '_blank', 'noopener');
 }
 
 function renderFinishes(project) {
   const el = document.getElementById('finishes-' + project);
   if (!el) return;
-  const f = FINISHES[project];
-  if (!f) {
-    el.innerHTML = `<div class="card"><div class="card-title">Color &amp; Finish Selections</div><div class="empty-state">Same template as 330 — selections to be locked in for this project.</div></div>`;
+  const items = getFinishes(project);
+  const editBtn = `<button id="fin-edit-${project}" class="edit-toggle${editMode?' on':''}" onclick="toggleEditMode('${project}')">${editMode?'✓ Done Editing':'🔒 Edit (Admin)'}</button>`;
+
+  if (editMode) {
+    const rows = items.map((it,i) => `<tr>
+      <td><input class="mat-input" value="${esc(it.category||'')}" onchange="editFinishField('${project}',${i},'category',this.value)" placeholder="Category"></td>
+      <td><input class="mat-input" value="${esc(it.label||'')}" onchange="editFinishField('${project}',${i},'label',this.value)" placeholder="Location"></td>
+      <td><input class="mat-input" value="${esc(it.selection||'')}" onchange="editFinishField('${project}',${i},'selection',this.value)" placeholder="e.g. SW 7551 Greek Villa"></td>
+      <td style="text-align:center;">${finishHex(it)?`<span class="finish-chip" style="background:${finishHex(it)}"></span>`:''}<input class="mat-input" style="width:74px;" value="${esc(it.hex||'')}" onchange="editFinishField('${project}',${i},'hex',this.value)" placeholder="#hex"></td>
+      <td><input class="mat-input" value="${esc(it.link||'')}" onchange="editFinishField('${project}',${i},'link',this.value)" placeholder="https://"></td>
+      <td style="white-space:nowrap;"><button class="mini-btn" title="Search web for color/code" onclick="webSearchFinish('${project}',${i})">🔎</button> <button class="mini-btn danger" title="Delete" onclick="deleteFinish('${project}',${i})">✕</button></td>
+    </tr>`).join('');
+    el.innerHTML = `<div class="card">
+      <div class="section-header"><div class="card-title">Color &amp; Finish Selections</div>${editBtn}</div>
+      <div class="table-wrap"><table class="budget-line-table">
+        <thead><tr><th>Category</th><th>Location</th><th>Selection</th><th>Swatch</th><th>Link</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="addFinish('${project}')">+ Add Selection</button>
+      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">🔎 opens a web search for the color/code. Paste the hex (#RRGGBB) for a swatch and a product link. AI auto-fill coming later.</div>
+    </div>`;
     return;
   }
-  const rowSet = (title, rows, withChip) => `
+
+  if (!items.length) {
+    el.innerHTML = `<div class="card"><div class="section-header"><div class="card-title">Color &amp; Finish Selections</div>${editBtn}</div><div class="empty-state">No selections yet — unlock Edit (Admin) to add them.</div></div>`;
+    return;
+  }
+  const cats = [], byCat = {};
+  items.forEach(it => { const c = it.category || 'Other'; if (!byCat[c]) { byCat[c] = []; cats.push(c); } byCat[c].push(it); });
+  const sections = cats.map(c => `
     <div style="margin-bottom:16px;">
-      <div style="font-weight:700;color:var(--gold);font-size:0.82rem;margin-bottom:8px;">${title}</div>
+      <div style="font-weight:700;color:var(--gold);font-size:0.82rem;margin-bottom:8px;">${c}</div>
       <div class="table-wrap"><table class="budget-line-table"><tbody>
-        ${rows.map(([k,v]) => `<tr><td style="white-space:nowrap;">${withChip?swChip(v):''}${k}</td><td style="color:var(--text-muted);">${v}</td></tr>`).join('')}
+        ${byCat[c].map(it => { const hex = finishHex(it); return `<tr>
+          <td style="white-space:nowrap;">${hex?`<span class="finish-chip" style="background:${hex}"></span>`:''}${it.label||''}</td>
+          <td style="color:var(--text-muted);">${it.selection||''}${it.link?` <a href="${esc(it.link)}" target="_blank" rel="noopener" style="color:var(--blue);">↗ link</a>`:''}</td>
+        </tr>`; }).join('')}
       </tbody></table></div>
-    </div>`;
-  el.innerHTML = `
-    <div class="card">
-      <div class="section-header">
-        <div class="card-title">Color &amp; Finish Selections — Locked In</div>
-        <span class="badge badge-green">Decisions complete</span>
-      </div>
-      ${rowSet('Interior Paint (Sherwin Williams)', f.interior, true)}
-      ${rowSet('Exterior Paint (Sherwin Williams)', f.exterior, true)}
-      ${rowSet(`Flooring — Cella (${fmt(f.flooringTotal)} total)`, f.flooring, false)}
-    </div>`;
+    </div>`).join('');
+  el.innerHTML = `<div class="card">
+    <div class="section-header"><div class="card-title">Color &amp; Finish Selections</div>${editBtn}</div>
+    ${sections}
+  </div>`;
 }
 
 // ─── BUDGET EDITOR ─────────────────────────────────────────────
