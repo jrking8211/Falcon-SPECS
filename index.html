@@ -509,7 +509,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -542,6 +542,13 @@ function initFirebase() {
         handleFirestoreUpdate(key);
         return;
       }
+      if (key.startsWith('gl_')) {
+        const data = snap.data();
+        if (!data) return;
+        S.setLocal(key, data);
+        handleFirestoreUpdate(key);
+        return;
+      }
       const incoming = snap.data()?.value;
       if (incoming === undefined) return;
       if (JSON.stringify(S.get(key, null)) === JSON.stringify(incoming)) return;
@@ -571,6 +578,8 @@ function handleFirestoreUpdate(key) {
   else if (key === 'budget_326')      { renderBudget('326'); renderProjectDetail('326'); }
   else if (key === 'qb_balance_330')  { renderBudget('330'); renderProjectDetail('330'); }
   else if (key === 'qb_balance_326')  { renderBudget('326'); renderProjectDetail('326'); }
+  else if (key === 'gl_330')          renderPhaseBudget('330');
+  else if (key === 'gl_326')          renderPhaseBudget('326');
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
 }
@@ -678,21 +687,68 @@ const PLAN_DATA = {
 };
 
 // ─── PHASE BUDGET vs SPENT (from handoff May 17, 2026) ─────────
-// Spent = live actuals from QB register acct 1597 (categorized); ties to $420,669.44
-const PHASES = {
+// Phase plan: budget targets + default status + ordering. Spent is computed LIVE
+// from the QB register (gl_330 / gl_326) that Make.com syncs to Firebase nightly.
+const PHASE_PLAN = {
   '330': [
-    { phase: 'Lot Acquired',                 spent: 78879.72,  budget: 95000,  status: 'done' },
-    { phase: 'Permits, Design & Soft Costs', spent: 20184.35,  budget: 22000,  status: 'active', flag: 'survey, permits, architect, GC, insurance, sanitation' },
-    { phase: 'Foundation',                   spent: 72744.31,  budget: 50000,  status: 'done', flag: 'over budget ~$22.7K' },
-    { phase: 'Framing & Exterior Shell',     spent: 181639.21, budget: 185000, status: 'done', flag: 'incl. roofing, siding, brick, windows, gutters' },
-    { phase: 'MEP Rough-in',                 spent: 38435.48,  budget: 90000,  status: 'active', flag: 'HVAC final ~$22K still to bill' },
-    { phase: 'Drywall & Insulation',         spent: 6613.46,   budget: 25000,  status: 'active', flag: 'hanging underway' },
-    { phase: 'Finishes',                     spent: 22172.91,  budget: 80000,  status: 'active', flag: 'many items committed/ordered' },
-    { phase: 'Punch List',                   spent: 0,         budget: 10000,  status: 'pending' },
-    { phase: 'Listing / Sale',               spent: 0,         budget: 5000,   status: 'pending' },
+    { phase: 'Lot Acquired',                 budget: 95000,  status: 'done' },
+    { phase: 'Permits, Design & Soft Costs', budget: 22000,  status: 'active', flag: 'survey, permits, architect, GC, insurance, sanitation' },
+    { phase: 'Foundation',                   budget: 50000,  status: 'done' },
+    { phase: 'Framing & Exterior Shell',     budget: 185000, status: 'done', flag: 'incl. roofing, siding, brick, windows, gutters' },
+    { phase: 'MEP Rough-in',                 budget: 90000,  status: 'active', flag: 'HVAC final ~$22K still to bill' },
+    { phase: 'Drywall & Insulation',         budget: 25000,  status: 'active' },
+    { phase: 'Finishes',                     budget: 80000,  status: 'active' },
+    { phase: 'Punch List',                   budget: 10000,  status: 'pending' },
+    { phase: 'Listing / Sale',               budget: 5000,   status: 'pending' },
   ],
-  '326': []  // same template — data TBD
+  '326': [
+    { phase: 'Lot Acquired',                 budget: 75000,  status: 'done' },
+    { phase: 'Permits, Design & Soft Costs', budget: 22000,  status: 'active' },
+    { phase: 'Foundation',                   budget: 50000,  status: 'active' },
+    { phase: 'Framing & Exterior Shell',     budget: 185000, status: 'pending' },
+    { phase: 'MEP Rough-in',                 budget: 90000,  status: 'pending' },
+    { phase: 'Drywall & Insulation',         budget: 25000,  status: 'pending' },
+    { phase: 'Finishes',                     budget: 80000,  status: 'pending' },
+    { phase: 'Punch List',                   budget: 10000,  status: 'pending' },
+    { phase: 'Listing / Sale',               budget: 5000,   status: 'pending' },
+  ],
 };
+
+// Keyword → phase categorizer (mirrors the reconciliation logic). Order matters.
+function categorizePhase(payee, memo) {
+  const b = ((payee||'') + ' ' + (memo||'')).toLowerCase();
+  const has = (...kw) => kw.some(k => b.includes(k));
+  if (has('valley title','lot closing','title fee')) return 'Lot Acquired';
+  if (has('srm','willocks','concrete','footer','footing','cmu','block','excavat','claiborne','little river','grading','foundation','reagan steel','rebar')) return 'Foundation';
+  if (has('witt','baca','crane','lumber','framing','truss','roof','shingle','soffit','fascia','siding','gutter','brick','us brick','masonry','window','exterior door')) return 'Framing & Exterior Shell';
+  if (has('phoenix','electric','plumb','ferguson','priority','noland','hvac','duct','mechanical','rough','pro pump')) return 'MEP Rough-in';
+  if (has('drywall','foundation building','gypsum','sheetrock','insulat','dale insulation')) return 'Drywall & Insulation';
+  if (has('cabinet','old city','tile','cella','floor','lvp','carpet','paint','universal','fireplace','archie','vanity','countertop','backsplash','trim package','interior door','fixture','appliance','hardware','garage door','farmer','sherwin')) return 'Finishes';
+  // everything else = soft costs / general conditions
+  return 'Permits, Design & Soft Costs';
+}
+
+// Build phase rows from the live GL doc; falls back to plan-only (spent 0) if no GL yet.
+function computePhases(project) {
+  const plan = PHASE_PLAN[project] || [];
+  const gl = S.get('gl_' + project, null);
+  const spentByPhase = {};
+  plan.forEach(p => spentByPhase[p.phase] = 0);
+  let hasData = false;
+  if (gl && Array.isArray(gl.rows) && gl.rows.length) {
+    hasData = true;
+    gl.rows.forEach(r => {
+      const amt = Number(r.amount) || 0;
+      const ph = categorizePhase(r.payee, r.memo);
+      spentByPhase[ph] = (spentByPhase[ph] || 0) + amt;
+    });
+  }
+  return {
+    hasData,
+    lastSync: gl?.lastSync || null,
+    rows: plan.map(p => ({ ...p, spent: Math.round((spentByPhase[p.phase]||0) * 100) / 100 }))
+  };
+}
 
 // ─── MATERIALS STATUS (27 line items, from handoff) ───────────
 // status: not-ordered | bid-in | ordered | on-site | installed
@@ -1343,16 +1399,23 @@ function renderProjectDetail(project) {
 function renderPhaseBudget(project) {
   const el = document.getElementById('phasebudget-' + project);
   if (!el) return;
-  const phases = PHASES[project] || [];
+  const computed = computePhases(project);
+  const phases = computed.rows;
   if (!phases.length) { el.innerHTML = ''; return; }
   const totalSpent  = phases.reduce((s,p) => s + p.spent, 0);
   const totalBudget = phases.reduce((s,p) => s + p.budget, 0);
   const statusColor = { done:'var(--green)', active:'var(--orange)', pending:'var(--text-muted)' };
+  const syncBadge = computed.hasData
+    ? `<span class="qb-live">● Live from QB${computed.lastSync ? ' · ' + computed.lastSync : ''}</span>`
+    : `<span class="badge badge-gray">Awaiting QB sync</span>`;
   el.innerHTML = `
     <div class="card">
       <div class="section-header">
         <div class="card-title">Phase Budget — Spent vs Plan</div>
-        <span class="badge badge-gold">${fmt(totalSpent)} / ${fmt(totalBudget)}</span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          ${syncBadge}
+          <span class="badge badge-gold">${fmt(totalSpent)} / ${fmt(totalBudget)}</span>
+        </div>
       </div>
       <div class="table-wrap"><table class="budget-line-table">
         <thead><tr><th>Phase</th><th style="text-align:right;">Spent</th><th style="text-align:right;">Budget</th><th>Status</th></tr></thead>
