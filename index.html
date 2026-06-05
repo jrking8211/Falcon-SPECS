@@ -678,16 +678,18 @@ const PLAN_DATA = {
 };
 
 // ─── PHASE BUDGET vs SPENT (from handoff May 17, 2026) ─────────
+// Spent = live actuals from QB register acct 1597 (categorized); ties to $420,669.44
 const PHASES = {
   '330': [
-    { phase: 'Lot Acquired',  spent: 91289.95,  budget: 95000,  status: 'done' },
-    { phase: 'Foundation',    spent: 79369.46,  budget: 50000,  status: 'done', flag: 'over budget ~$29K' },
-    { phase: 'Framing',       spent: 159549.43, budget: 185000, status: 'done' },
-    { phase: 'MEP Rough-in',  spent: 43211.58,  budget: 90000,  status: 'active', flag: 'HVAC final ~$22K still to bill' },
-    { phase: 'Drywall',       spent: 8157.25,   budget: 25000,  status: 'pending', flag: 'starts May 20' },
-    { phase: 'Finishes',      spent: 22490.23,  budget: 80000,  status: 'active', flag: 'many items committed/ordered' },
-    { phase: 'Punch List',    spent: 0,         budget: 10000,  status: 'pending' },
-    { phase: 'Listing / Sale',spent: 0,         budget: 5000,   status: 'pending' },
+    { phase: 'Lot Acquired',                 spent: 78879.72,  budget: 95000,  status: 'done' },
+    { phase: 'Permits, Design & Soft Costs', spent: 20184.35,  budget: 22000,  status: 'active', flag: 'survey, permits, architect, GC, insurance, sanitation' },
+    { phase: 'Foundation',                   spent: 72744.31,  budget: 50000,  status: 'done', flag: 'over budget ~$22.7K' },
+    { phase: 'Framing & Exterior Shell',     spent: 181639.21, budget: 185000, status: 'done', flag: 'incl. roofing, siding, brick, windows, gutters' },
+    { phase: 'MEP Rough-in',                 spent: 38435.48,  budget: 90000,  status: 'active', flag: 'HVAC final ~$22K still to bill' },
+    { phase: 'Drywall & Insulation',         spent: 6613.46,   budget: 25000,  status: 'active', flag: 'hanging underway' },
+    { phase: 'Finishes',                     spent: 22172.91,  budget: 80000,  status: 'active', flag: 'many items committed/ordered' },
+    { phase: 'Punch List',                   spent: 0,         budget: 10000,  status: 'pending' },
+    { phase: 'Listing / Sale',               spent: 0,         budget: 5000,   status: 'pending' },
   ],
   '326': []  // same template — data TBD
 };
