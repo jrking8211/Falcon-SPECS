@@ -829,19 +829,52 @@ function currentPhaseLabel(project) {
   return next ? next + ' (next up)' : 'Not started';
 }
 
-// Keyword → phase categorizer (mirrors the reconciliation logic). Order matters.
+// Vendor → default phase (used when a line's description isn't specific).
+// Built from the sub/vendor list; matched by substring on the payee. Mixed
+// vendors (Witt, Ferguson) default here but are overridden by line descriptions.
+const VENDOR_PHASE = [
+  ['valley title','Lot Acquired'],
+  ['etn survey','Permits, Design & Soft Costs'],
+  ['dunlap','Foundation'], ['concrete pump','Foundation'], ['claiborn','Foundation'],
+  ['wilocks','Foundation'], ['willocks','Foundation'],
+  ['carlos baca','Framing & Exterior Shell'], ['baca','Framing & Exterior Shell'],
+  ['witt','Framing & Exterior Shell'], ['us brick','Framing & Exterior Shell'],
+  ['construction services','Framing & Exterior Shell'], ['robbins','Framing & Exterior Shell'],
+  ['phoenix electric','MEP Rough-in'], ['pheonix','MEP Rough-in'],
+  ['finchum','MEP Rough-in'], ['priority plumb','MEP Rough-in'], ['taylor plumb','MEP Rough-in'],
+  ['ferguson','MEP Rough-in'], ['noland','MEP Rough-in'],
+  ['foundation building','Drywall & Insulation'],
+  ['old city','Interior Finishes'], ['standard kitchen','Interior Finishes'],
+  ['cella','Interior Finishes'], ['universal paint','Interior Finishes'],
+  ['stone design','Interior Finishes'], ['archie','Interior Finishes'], ['farmer garage','Interior Finishes'],
+  ['williams concrete','Exterior Finishes'],
+];
+
+// Work/material description keywords → phase. Itemized line descriptions win
+// here, so a split bill lands each line in the right phase. (Deliberately no
+// bare "concrete"/"plumb"/"electric" — those are ambiguous; use specific words.)
+function descPhase(t) {
+  const has = (...kw) => kw.some(k => t.includes(k));
+  if (has('lot closing','title fee','closing cost')) return 'Lot Acquired';
+  if (has('footer','footing','foundation pour','cmu','block','rebar','excavat','grading','crawlspace','waterproof','sand','gravel')) return 'Foundation';
+  if (has('flatwork','driveway','sidewalk','slab','final grade','landscap','sod','seeding','retaining wall')) return 'Exterior Finishes';
+  if (has('framing','lumber','truss','roof','shingle','soffit','fascia','siding','gutter','exterior door','exterior trim','window','brick','stone install','masonry','decking')) return 'Framing & Exterior Shell';
+  if (has('rough plumb','rough electric','electrical rough','rough-in','rough in','hvac','ductwork','duct ','mechanical')) return 'MEP Rough-in';
+  if (has('drywall','sheetrock','gypsum','insulat')) return 'Drywall & Insulation';
+  if (has('cabinet','countertop','tile','lvp','wood floor','carpet','flooring','interior paint','interior trim','interior door','stair part','vanity','backsplash','fixture','appliance','lighting','hardware','garage door','fireplace')) return 'Interior Finishes';
+  return null;
+}
+
+// Two-tier categorizer: line description wins, then vendor default, then backstop.
 function categorizePhase(payee, memo) {
-  const b = ((payee||'') + ' ' + (memo||'')).toLowerCase();
-  const has = (...kw) => kw.some(k => b.includes(k));
-  if (has('valley title','lot closing','title fee')) return 'Lot Acquired';
-  if (has('srm','willocks','concrete','footer','footing','cmu','block','excavat','claiborne','little river','grading','foundation','reagan steel','rebar')) return 'Foundation';
-  if (has('witt','baca','crane','lumber','framing','truss','roof','shingle','soffit','fascia','siding','gutter','brick','us brick','masonry','window','exterior door')) return 'Framing & Exterior Shell';
-  if (has('phoenix','electric','plumb','ferguson','priority','noland','hvac','duct','mechanical','rough','pro pump')) return 'MEP Rough-in';
-  if (has('drywall','foundation building','gypsum','sheetrock','insulat','dale insulation')) return 'Drywall & Insulation';
-  if (has('landscap','sod','driveway','sidewalk','flatwork','asphalt','paving','irrigation','mulch','hardscape','final grade','seeding','retaining wall')) return 'Exterior Finishes';
-  if (has('cabinet','old city','tile','cella','floor','lvp','carpet','paint','universal','fireplace','archie','vanity','countertop','backsplash','trim package','interior door','fixture','appliance','hardware','garage door','farmer','sherwin')) return 'Interior Finishes';
-  // everything else = soft costs / general conditions
-  return 'Permits, Design & Soft Costs';
+  const vendor = (payee || '').toLowerCase();
+  const desc   = (memo  || '').toLowerCase();
+  const d = descPhase(desc);                 // 1. itemized line description
+  if (d) return d;
+  for (const [k, ph] of VENDOR_PHASE) if (vendor.includes(k)) return ph;  // 2. vendor default
+  const d2 = descPhase(vendor + ' ' + desc); // 3. keyword backstop (incl. payee)
+  if (d2) return d2;
+  return 'Permits, Design & Soft Costs';     // 4. soft costs / general conditions
 }
 
 // Flatten a raw QuickBooks GeneralLedger report into [{date,payee,memo,amount}].
