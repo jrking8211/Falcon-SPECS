@@ -6,6 +6,7 @@
   <title>Falcon Development – Project Dashboard</title>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
   <style>
     :root {
       --navy: #221F1F;
@@ -144,6 +145,29 @@
     .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     @media(max-width:700px){ .two-col { grid-template-columns: 1fr; } }
 
+    /* ── Photo Gallery ── */
+    .photo-drop-zone { border: 2px dashed var(--border); border-radius: 10px; padding: 28px; text-align: center; cursor: pointer; transition: all 0.2s; color: var(--text-muted); font-size: 0.88rem; }
+    .photo-drop-zone:hover, .photo-drop-zone.drag-over { border-color: var(--gold); background: rgba(93,179,228,0.06); color: var(--gold); }
+    .photo-drop-zone input[type="file"] { display: none; }
+    .photo-drop-zone .drop-icon { font-size: 2rem; margin-bottom: 8px; }
+    .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-top: 16px; }
+    .photo-card { position: relative; border-radius: 8px; overflow: hidden; aspect-ratio: 4/3; background: var(--surface2); cursor: pointer; }
+    .photo-card img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.2s; }
+    .photo-card:hover img { transform: scale(1.04); }
+    .photo-card .photo-overlay { position: absolute; inset: 0; background: linear-gradient(transparent 50%, rgba(0,0,0,0.7)); opacity: 0; transition: opacity 0.2s; display: flex; align-items: flex-end; padding: 8px; }
+    .photo-card:hover .photo-overlay { opacity: 1; }
+    .photo-card .photo-caption { color: white; font-size: 0.75rem; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .photo-card .photo-del { background: rgba(239,68,68,0.8); border: none; color: white; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-size: 0.75rem; flex-shrink: 0; }
+    .photo-date { font-size: 0.68rem; color: var(--text-muted); margin-top: 2px; }
+    .upload-progress { height: 4px; background: var(--surface2); border-radius: 2px; margin-top: 10px; overflow: hidden; display: none; }
+    .upload-progress-bar { height: 100%; background: var(--gold); border-radius: 2px; transition: width 0.3s; }
+
+    /* ── Photo Modal ── */
+    .photo-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.92); display: flex; align-items: center; justify-content: center; z-index: 400; padding: 20px; }
+    .photo-modal-img { max-width: 100%; max-height: 90vh; border-radius: 8px; object-fit: contain; }
+    .photo-modal-close { position: fixed; top: 20px; right: 24px; background: none; border: none; color: white; font-size: 2rem; cursor: pointer; z-index: 401; }
+    .photo-modal-caption { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: white; font-size: 0.9rem; background: rgba(0,0,0,0.6); padding: 6px 16px; border-radius: 20px; }
+
     @media (max-width: 640px) {
       .form-grid { grid-template-columns: 1fr; }
       .form-group.full { grid-column: 1; }
@@ -183,6 +207,20 @@
     <p class="click-hint">Click once = In Progress &nbsp;·&nbsp; Click again = Complete &nbsp;·&nbsp; Click again = Reset</p>
     <div class="stages-grid" id="stages-330"></div>
   </div>
+  <div class="card">
+    <div class="section-header">
+      <div class="card-title">Project Photos</div>
+      <span id="photo-count-330" class="badge badge-gray"></span>
+    </div>
+    <div class="photo-drop-zone" id="drop-330" onclick="document.getElementById('file-330').click()" ondragover="dragOver(event,'330')" ondragleave="dragLeave('330')" ondrop="dropFiles(event,'330')">
+      <input type="file" id="file-330" accept="image/*" multiple onchange="handleFiles(event,'330')">
+      <div class="drop-icon">📷</div>
+      <div>Click to upload or drag &amp; drop photos</div>
+      <div style="font-size:0.75rem;margin-top:4px;opacity:0.6;">JPG, PNG, HEIC — multiple allowed</div>
+    </div>
+    <div class="upload-progress" id="progress-330"><div class="upload-progress-bar" id="progress-bar-330"></div></div>
+    <div class="photo-grid" id="photo-grid-330"></div>
+  </div>
 </div>
 
 <!-- 326 RODDY BRANCH -->
@@ -196,6 +234,20 @@
     </div>
     <p class="click-hint">Click once = In Progress &nbsp;·&nbsp; Click again = Complete &nbsp;·&nbsp; Click again = Reset</p>
     <div class="stages-grid" id="stages-326"></div>
+  </div>
+  <div class="card">
+    <div class="section-header">
+      <div class="card-title">Project Photos</div>
+      <span id="photo-count-326" class="badge badge-gray"></span>
+    </div>
+    <div class="photo-drop-zone" id="drop-326" onclick="document.getElementById('file-326').click()" ondragover="dragOver(event,'326')" ondragleave="dragLeave('326')" ondrop="dropFiles(event,'326')">
+      <input type="file" id="file-326" accept="image/*" multiple onchange="handleFiles(event,'326')">
+      <div class="drop-icon">📷</div>
+      <div>Click to upload or drag &amp; drop photos</div>
+      <div style="font-size:0.75rem;margin-top:4px;opacity:0.6;">JPG, PNG, HEIC — multiple allowed</div>
+    </div>
+    <div class="upload-progress" id="progress-326"><div class="upload-progress-bar" id="progress-bar-326"></div></div>
+    <div class="photo-grid" id="photo-grid-326"></div>
   </div>
 </div>
 
@@ -420,6 +472,9 @@ function initFirebase() {
       handleFirestoreUpdate(key);
     }, err => console.warn('Firestore listener error:', err));
   });
+
+  // Initialize Firebase Storage and load photos
+  initStorage();
 
   // Push any local data that isn't in Firestore yet (first-time migration)
   FS_KEYS.forEach(key => {
@@ -1203,6 +1258,110 @@ function toast(msg, type='success') {
 }
 
 const esc = s => String(s).replace(/"/g,'&quot;').replace(/</g,'&lt;');
+
+// ─── PHOTO GALLERY ─────────────────────────────────────────────
+let storage = null;
+
+function initStorage() {
+  storage = firebase.storage();
+  loadPhotos('330');
+  loadPhotos('326');
+}
+
+function loadPhotos(project) {
+  if (!db) return;
+  db.collection('photos_' + project).orderBy('uploadedAt','desc').onSnapshot(snap => {
+    const photos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderPhotoGallery(project, photos);
+  });
+}
+
+function renderPhotoGallery(project, photos) {
+  const grid = document.getElementById('photo-grid-' + project);
+  const badge = document.getElementById('photo-count-' + project);
+  if (!grid) return;
+  if (badge) { badge.textContent = photos.length + ' photo' + (photos.length !== 1 ? 's' : ''); badge.className = photos.length ? 'badge badge-gold' : 'badge badge-gray'; }
+  if (!photos.length) { grid.innerHTML = ''; return; }
+  grid.innerHTML = photos.map(p => `
+    <div class="photo-card" onclick="openPhotoModal('${p.url}','${esc(p.caption||'')}','${p.date||''}')">
+      <img src="${p.url}" alt="${esc(p.caption||'Construction photo')}" loading="lazy">
+      <div class="photo-overlay">
+        <span class="photo-caption">${p.caption || p.date || ''}</span>
+        <button class="photo-del" onclick="event.stopPropagation();deletePhoto('${project}','${p.id}','${esc(p.storagePath||'')}')">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+function handleFiles(event, project) {
+  const files = Array.from(event.target.files);
+  uploadFiles(project, files);
+  event.target.value = '';
+}
+
+function dragOver(event, project) { event.preventDefault(); document.getElementById('drop-'+project)?.classList.add('drag-over'); }
+function dragLeave(project) { document.getElementById('drop-'+project)?.classList.remove('drag-over'); }
+function dropFiles(event, project) {
+  event.preventDefault();
+  dragLeave(project);
+  const files = Array.from(event.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+  uploadFiles(project, files);
+}
+
+async function uploadFiles(project, files) {
+  if (!storage || !files.length) return;
+  const progressWrap = document.getElementById('progress-' + project);
+  const progressBar  = document.getElementById('progress-bar-' + project);
+  if (progressWrap) progressWrap.style.display = 'block';
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const path = `projects/${project}/${Date.now()}_${file.name}`;
+    const ref  = storage.ref(path);
+    try {
+      const uploadTask = ref.put(file);
+      await new Promise((resolve, reject) => {
+        uploadTask.on('state_changed',
+          snap => { const pct = (snap.bytesTransferred / snap.totalBytes) * 100; if (progressBar) progressBar.style.width = pct + '%'; },
+          reject,
+          resolve
+        );
+      });
+      const url = await ref.getDownloadURL();
+      await db.collection('photos_' + project).add({
+        url,
+        storagePath: path,
+        caption: '',
+        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        uploadedAt: new Date().toISOString()
+      });
+      toast(`Photo ${i+1}/${files.length} uploaded.`);
+    } catch (err) {
+      console.error('Upload failed:', err);
+      toast('Upload failed: ' + err.message, 'error');
+    }
+  }
+  if (progressWrap) { progressWrap.style.display = 'none'; if (progressBar) progressBar.style.width = '0%'; }
+}
+
+async function deletePhoto(project, docId, storagePath) {
+  if (!confirm('Delete this photo?')) return;
+  if (storagePath && storage) {
+    try { await storage.ref(storagePath).delete(); } catch(e) { /* already deleted */ }
+  }
+  await db.collection('photos_' + project).doc(docId).delete();
+  toast('Photo deleted.');
+}
+
+function openPhotoModal(url, caption, date) {
+  const overlay = document.createElement('div');
+  overlay.className = 'photo-modal-overlay';
+  overlay.innerHTML = `
+    <button class="photo-modal-close" onclick="this.closest('.photo-modal-overlay').remove()">✕</button>
+    <img class="photo-modal-img" src="${url}" alt="${caption}">
+    ${(caption||date) ? `<div class="photo-modal-caption">${caption || date}</div>` : ''}`;
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
 
 // ─── SEED QB EMPLOYEES (runs once if employee list is empty) ───
 function seedEmployees() {
