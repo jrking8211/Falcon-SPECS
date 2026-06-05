@@ -728,29 +728,69 @@ function categorizePhase(payee, memo) {
   return 'Permits, Design & Soft Costs';
 }
 
+// Flatten a raw QuickBooks GeneralLedger report into [{date,payee,memo,amount}].
+// When filtered to one account, QBO returns transactions directly under
+// Rows.Row[] as 4-cell ColData (date, name, memo, amount); nested sections are
+// walked recursively in case a filter ever returns grouped data.
+function flattenQBOReport(report) {
+  const out = [];
+  const walk = arr => {
+    if (!Array.isArray(arr)) return;
+    arr.forEach(r => {
+      if (r.ColData && (r.type === 'Data' || !r.type)) {
+        const c = r.ColData;
+        out.push({
+          date:   c[0]?.value || '',
+          payee:  c[1]?.value || '',
+          memo:   c[2]?.value || '',
+          amount: Number(String(c[3]?.value ?? '0').replace(/,/g, '')) || 0
+        });
+      }
+      if (r.Rows?.Row) walk(r.Rows.Row);
+    });
+  };
+  walk(report?.Rows?.Row || report?.body?.Rows?.Row);
+  return out;
+}
+
+// Extract transaction rows from the gl_<project> Firestore doc. Make.com writes
+// the raw GeneralLedger report as a JSON string in `reportJson`; older seeds may
+// carry a pre-flattened `rows` array or `rowsJson` string — all are accepted.
+function parseGLRows(gl) {
+  if (!gl) return null;
+  if (Array.isArray(gl.rows)) return gl.rows;
+  if (typeof gl.rowsJson === 'string') { try { return JSON.parse(gl.rowsJson); } catch {} }
+  let report = null;
+  if (typeof gl.reportJson === 'string') { try { report = JSON.parse(gl.reportJson); } catch {} }
+  else if (gl.reportJson && typeof gl.reportJson === 'object') report = gl.reportJson;
+  else if (gl.Rows || gl.body) report = gl;
+  return report ? flattenQBOReport(report) : null;
+}
+
 // Build phase rows from the live GL doc; falls back to plan-only (spent 0) if no GL yet.
+// Also returns the live Inventory-Asset balance = sum of all register rows.
 function computePhases(project) {
   const plan = PHASE_PLAN[project] || [];
   const gl = S.get('gl_' + project, null);
   const spentByPhase = {};
   plan.forEach(p => spentByPhase[p.phase] = 0);
   let hasData = false;
-  // Rows may arrive as an array (gl.rows) or a JSON string (gl.rowsJson)
-  let rows = null;
-  if (gl) {
-    if (Array.isArray(gl.rows)) rows = gl.rows;
-    else if (typeof gl.rowsJson === 'string') { try { rows = JSON.parse(gl.rowsJson); } catch {} }
-  }
+  let balance = null;
+  const rows = parseGLRows(gl);
   if (rows && rows.length) {
     hasData = true;
+    let total = 0;
     rows.forEach(r => {
       const amt = Number(r.amount) || 0;
+      total += amt;
       const ph = categorizePhase(r.payee, r.memo);
       spentByPhase[ph] = (spentByPhase[ph] || 0) + amt;
     });
+    balance = Math.round(total * 100) / 100;
   }
   return {
     hasData,
+    balance,
     lastSync: gl?.lastSync || null,
     rows: plan.map(p => ({ ...p, spent: Math.round((spentByPhase[p.phase]||0) * 100) / 100 }))
   };
@@ -913,10 +953,13 @@ function getDefaultBudget(p) {
 function renderBudget(project) {
   const stored = S.get('budget_' + project, null);
   const b = stored || getDefaultBudget(project);
-  // Prefer Make.com nightly sync balance, fall back to QB_INVENTORY hardcoded value
+  // Prefer the live GL register total (summed from the nightly QB GeneralLedger
+  // sync), then the qb_balance doc, then the hardcoded QB_INVENTORY fallback.
+  const glComputed = computePhases(project);
   const qbDoc = S.get('qb_balance_' + project, null);
-  const qb = qbDoc?.balance || b.qbBalance || QB_INVENTORY[project].balance;
-  const syncText2 = qbDoc?.lastSync ? `QB synced ${qbDoc.lastSync}` : null;
+  const qb = glComputed.balance ?? qbDoc?.balance ?? b.qbBalance ?? QB_INVENTORY[project].balance;
+  const syncText2 = glComputed.lastSync ? `QB synced ${glComputed.lastSync}`
+                  : qbDoc?.lastSync ? `QB synced ${qbDoc.lastSync}` : null;
   const budget = b.totalBudget || 0;
   const salePrice = b.projectedSalePrice || 0;
   const projectedProfit = salePrice - budget;
