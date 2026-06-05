@@ -742,6 +742,15 @@ function submitTimeLog() {
   logs.push(entry);
   S.set('timelogs', logs);
 
+  // Write to QB sync queue — Make.com picks this up and creates a QB Time Activity
+  if (db) {
+    db.collection('timelog_queue').add({
+      ...entry,
+      synced: false,
+      createdAt: new Date().toISOString()
+    }).catch(err => console.warn('Queue write failed:', err));
+  }
+
   document.getElementById('tl-start').value    = '';
   document.getElementById('tl-end').value      = '';
   document.getElementById('tl-desc').value     = '';
