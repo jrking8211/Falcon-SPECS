@@ -735,9 +735,15 @@ function computePhases(project) {
   const spentByPhase = {};
   plan.forEach(p => spentByPhase[p.phase] = 0);
   let hasData = false;
-  if (gl && Array.isArray(gl.rows) && gl.rows.length) {
+  // Rows may arrive as an array (gl.rows) or a JSON string (gl.rowsJson)
+  let rows = null;
+  if (gl) {
+    if (Array.isArray(gl.rows)) rows = gl.rows;
+    else if (typeof gl.rowsJson === 'string') { try { rows = JSON.parse(gl.rowsJson); } catch {} }
+  }
+  if (rows && rows.length) {
     hasData = true;
-    gl.rows.forEach(r => {
+    rows.forEach(r => {
       const amt = Number(r.amount) || 0;
       const ph = categorizePhase(r.payee, r.memo);
       spentByPhase[ph] = (spentByPhase[ph] || 0) + amt;
