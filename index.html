@@ -928,10 +928,24 @@ function renderEmployeeList() {
     <tbody>${emps.map((e,i)=>`<tr>
       <td>${e.name}</td>
       <td>${e.hourlyRate ? fmt(e.hourlyRate)+'/hr' : '—'}</td>
-      <td><span style="letter-spacing:4px;color:var(--text-muted);">••••</span></td>
+      <td>
+        <input type="password" value="${e.pin}" id="pin-emp-${i}"
+          style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);width:90px;outline:none;"
+          maxlength="6">
+        <button onclick="saveEmpPin(${i})" class="btn btn-secondary btn-sm" style="margin-left:6px;">Save</button>
+      </td>
       <td><button onclick="removeEmployee(${i})" class="btn btn-danger btn-sm">Remove</button></td>
     </tr>`).join('')}</tbody>
   </table></div>`;
+}
+
+function saveEmpPin(idx) {
+  const newPin = document.getElementById('pin-emp-' + idx)?.value.trim();
+  if (!/^\d{4,6}$/.test(newPin)) { toast('PIN must be 4–6 digits.', 'error'); return; }
+  const emps = getEmployees();
+  emps[idx].pin = newPin;
+  S.set('employees', emps);
+  toast(`PIN updated for ${emps[idx].name}.`);
 }
 
 function removeEmployee(idx) {
