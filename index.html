@@ -1801,8 +1801,10 @@ const LOAN_INFO = {
     lender: 'Pinnacle Bank',
     borrower: 'JKING Enterprises LLC d/b/a Falcon Enterprises LLC',
     commitment: 532000,
-    rate: null,                 // APR % — set from Pinnacle promissory note
-    maturity: null,             // e.g. '2027-02-18' — set from note
+    rateBasis: 'Prime + 0.50%',  // floating; effective = primeRate + rateMargin
+    primeRate: 7.50,             // WSJ Prime (update when prime changes)
+    rateMargin: 0.50,
+    maturity: null,              // e.g. '2027-02-18' — set from note
     interestType: 'interest-only',
     settled: '2026-02-18',
     collateral: '326 Roddy Branch Rd',
@@ -1841,15 +1843,20 @@ function renderLoan(project) {
   const hasDrawn = drawn != null && !isNaN(drawn);
   const available = hasDrawn ? Math.max(0, info.commitment - drawn) : null;
   const pct = hasDrawn ? Math.min(100, Math.round((drawn / info.commitment) * 1000) / 10) : 0;
-  const moInterest = (hasDrawn && info.rate) ? drawn * (info.rate / 100) / 12 : null;
+  // Effective rate: explicit info.rate, else floating primeRate + rateMargin.
+  const rate = info.rate != null ? info.rate
+    : (info.primeRate != null && info.rateMargin != null ? info.primeRate + info.rateMargin : null);
+  const moInterest = (hasDrawn && rate) ? drawn * (rate / 100) / 12 : null;
   const stat = (lbl, val, color) => `<div style="flex:1;min-width:150px;background:var(--surface2);border-radius:8px;padding:10px 14px;">
     <div class="s-lbl">${lbl}</div><div style="font-weight:700;font-size:1.05rem;margin-top:2px;${color?`color:${color};`:''}">${val}</div></div>`;
 
-  const rateTxt = info.rate ? info.rate.toFixed(2) + '%' : '<span style="color:var(--gold);">set rate ⚠️</span>';
+  const rateTxt = rate != null
+    ? (info.rateBasis ? `${info.rateBasis}<br><span style="font-size:0.78rem;color:var(--text-muted);">${rate.toFixed(2)}% now</span>` : rate.toFixed(2) + '%')
+    : '<span style="color:var(--gold);">set rate ⚠️</span>';
   const drawnTxt = hasDrawn ? fmt(drawn) : '<span style="color:var(--text-muted);">awaiting QB sync</span>';
   const availTxt = hasDrawn ? fmt(available) : '—';
-  const moTxt = moInterest != null ? fmt(moInterest) + '/mo'
-    : (!info.rate ? 'set rate' : '—');
+  const moTxt = moInterest != null ? fmt(Math.round(moInterest)) + '/mo'
+    : (rate == null ? 'set rate' : (hasDrawn ? '—' : '$0 / mo (no draws)'));
 
   const breakdown = info.closingBreakdown.map(([l, v]) =>
     `<tr><td>${l}</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${fmt(v)}</td></tr>`).join('');
