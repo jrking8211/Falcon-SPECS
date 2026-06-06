@@ -966,8 +966,8 @@ const MATERIALS = {
   '330': [
     { item: 'Drywall materials', vendor: 'Foundation Building Materials', cost: 8157, status: 'on-site', neededBy: '2026-05-20' },
     { item: 'Interior paint + labor (Est #909)', vendor: 'Universal Painting LLC', cost: 17403, status: 'ordered', neededBy: '2026-06-08' },
-    { item: 'Interior paint colors (SW)', vendor: 'Greek Villa + Extra White', cost: 0, status: 'installed', neededBy: '2026-06-05' },
-    { item: 'Exterior paint colors (SW)', vendor: 'Poolhouse / In the Navy / Accessible Beige / Extra White', cost: 0, status: 'installed', neededBy: '2026-06-20' },
+    { item: 'Interior paint colors (SW)', vendor: 'Greek Villa + Extra White', cost: 0, status: 'installed', neededBy: '2026-06-05', selection: true },
+    { item: 'Exterior paint colors (SW)', vendor: 'Poolhouse / In the Navy / Accessible Beige / Extra White', cost: 0, status: 'installed', neededBy: '2026-06-20', selection: true },
     { item: 'Exterior paint + labor (siding + trim)', vendor: 'Painter (confirm if Universal)', cost: 8800, status: 'ordered', neededBy: '2026-07-15' },
     { item: 'Kitchen cabinets', vendor: 'Old City Kitchens', cost: 18305, status: 'ordered', neededBy: '2026-06-08' },
     { item: 'Bath vanities', vendor: 'TBD', cost: 0, status: 'ordered', neededBy: '2026-06-15' },
@@ -977,7 +977,7 @@ const MATERIALS = {
     { item: 'Kitchen backsplash tile', vendor: 'Cella Flooring & Design', cost: 2500, status: 'ordered', neededBy: '2026-06-22' },
     { item: 'Main level LVP (2,180 SF)', vendor: 'Cella Flooring & Design', cost: 14933, status: 'ordered', neededBy: '2026-06-22' },
     { item: 'Bonus room + stairs carpet (816 SF)', vendor: 'Cella Flooring & Design', cost: 4122, status: 'ordered', neededBy: '2026-07-10' },
-    { item: 'Cella — proposal accepted', vendor: 'Net terms (no deposit)', cost: 0, status: 'installed', neededBy: '2026-05-25' },
+    { item: 'Cella — proposal accepted', vendor: 'Net terms (no deposit)', cost: 0, status: 'installed', neededBy: '2026-05-25', selection: true },
     { item: 'Trim package', vendor: 'Witt Building Material', cost: 0, status: 'ordered', neededBy: '2026-06-08' },
     { item: 'Interior doors', vendor: 'TBD', cost: 0, status: 'ordered', neededBy: '2026-06-15' },
     { item: 'Plumbing rough-in + materials (incl. upstairs bath add-on)', vendor: 'Priority Plumbing LLC', cost: 9000, status: 'ordered', neededBy: '2026-06-25' },
@@ -1816,6 +1816,7 @@ function renderMaterials(project) {
   // single line — the QB actual is the vendor total, counted once.
   const groups = {};
   items.forEach(i => {
+    if (i.selection) return; // color selections etc. are not vendors — keep out of the roll-up
     const m = qbActualForVendor(i.vendor, glTotals);
     if (m) {
       const keys = m.keys.slice().sort();
