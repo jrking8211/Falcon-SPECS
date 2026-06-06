@@ -861,6 +861,7 @@ const VENDOR_PHASE = [
 // bare "concrete"/"plumb"/"electric" — those are ambiguous; use specific words.)
 function descPhase(t) {
   const has = (...kw) => kw.some(k => t.includes(k));
+  if (has('bank fee','loan fee','loan cost','origination','draw fee','financing','interest','lender','appraisal')) return 'Permits, Design & Soft Costs'; // construction-loan / financing soft costs
   if (has('lot closing','title fee','closing cost')) return 'Lot Acquired';
   if (has('footer','footing','foundation pour','cmu','block','rebar','excavat','grading','crawlspace','waterproof','sand','gravel')) return 'Foundation';
   if (has('flatwork','driveway','sidewalk','slab','final grade','landscap','sod','seeding','retaining wall')) return 'Exterior Finishes';
