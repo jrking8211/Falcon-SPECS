@@ -325,6 +325,7 @@
   <div id="budget-326"></div>
   <div id="projdetail-326"></div>
   <div id="phasebudget-326"></div>
+  <div id="loan-326"></div>
   <div id="materials-326"></div>
   <div id="finishes-326"></div>
   <div class="card">
@@ -553,7 +554,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -615,6 +616,14 @@ function initFirebase() {
         handleFirestoreUpdate(key);
         return;
       }
+      // Loan balance docs written by Make.com (Pinnacle Bank liability account)
+      if (key.startsWith('loan_')) {
+        const data = snap.data();
+        if (!data || data.balance === undefined) return;
+        S.setLocal(key, { balance: data.balance, lastSync: data.lastSync });
+        handleFirestoreUpdate(key);
+        return;
+      }
       const incoming = snap.data()?.value;
       if (incoming === undefined) return;
       if (JSON.stringify(S.get(key, null)) === JSON.stringify(incoming)) return;
@@ -654,6 +663,7 @@ function handleFirestoreUpdate(key) {
   else if (key === 'materials_326')   renderMaterials('326');
   else if (key === 'finishes_330')    renderFinishes('330');
   else if (key === 'finishes_326')    renderFinishes('326');
+  else if (key === 'loan_326')        renderLoan('326');
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
 }
@@ -1781,6 +1791,91 @@ function computeRowQB(items, glTotals, glLines) {
   return info;
 }
 
+// ── Construction loan tracking (326 only; 330 is Falcon cash) ──
+// Commitment, closing costs and rate from the Pinnacle Bank closing docs.
+// Outstanding balance (amount drawn) auto-syncs nightly from QuickBooks
+// (Make.com → dashboard/loan_326 {balance,lastSync}); interest-only.
+const LOAN_INFO = {
+  '326': {
+    lender: 'Pinnacle Bank',
+    borrower: 'JKING Enterprises LLC d/b/a Falcon Enterprises LLC',
+    commitment: 532000,
+    rate: null,                 // APR % — set from Pinnacle promissory note
+    maturity: null,             // e.g. '2027-02-18' — set from note
+    interestType: 'interest-only',
+    settled: '2026-02-18',
+    collateral: '326 Roddy Branch Rd',
+    closingCosts: 5712,
+    closingBreakdown: [
+      ['Loan origination fee (0.50%)', 2660],
+      ['Appraisal fee', 410],
+      ['Flood certification', 7.50],
+      ['Title services — Admiral Title', 1100],
+      ['Attorney / Deed of Trust — Adams Law', 300],
+      ['Lender title insurance — Westcor', 542],
+      ['Recording + state tax/stamps', 692.50],
+    ],
+  },
+};
+
+function renderLoan(project) {
+  const el = document.getElementById('loan-' + project);
+  if (!el) return;
+  const info = LOAN_INFO[project];
+  if (!info) { el.innerHTML = ''; return; }  // cash-financed projects show nothing
+
+  const loan = S.get('loan_' + project, null);
+  const drawn = loan && loan.balance != null && loan.balance !== '' ? Number(loan.balance) : null;
+  const hasDrawn = drawn != null && !isNaN(drawn);
+  const available = hasDrawn ? Math.max(0, info.commitment - drawn) : null;
+  const pct = hasDrawn ? Math.min(100, Math.round((drawn / info.commitment) * 1000) / 10) : 0;
+  const moInterest = (hasDrawn && info.rate) ? drawn * (info.rate / 100) / 12 : null;
+  const stat = (lbl, val, color) => `<div style="flex:1;min-width:150px;background:var(--surface2);border-radius:8px;padding:10px 14px;">
+    <div class="s-lbl">${lbl}</div><div style="font-weight:700;font-size:1.05rem;margin-top:2px;${color?`color:${color};`:''}">${val}</div></div>`;
+
+  const rateTxt = info.rate ? info.rate.toFixed(2) + '%' : '<span style="color:var(--gold);">set rate ⚠️</span>';
+  const drawnTxt = hasDrawn ? fmt(drawn) : '<span style="color:var(--text-muted);">awaiting QB sync</span>';
+  const availTxt = hasDrawn ? fmt(available) : '—';
+  const moTxt = moInterest != null ? fmt(moInterest) + '/mo'
+    : (!info.rate ? 'set rate' : '—');
+
+  const breakdown = info.closingBreakdown.map(([l, v]) =>
+    `<tr><td>${l}</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${fmt(v)}</td></tr>`).join('');
+
+  el.innerHTML = `
+  <div class="card">
+    <div class="section-header">
+      <div class="card-title">Construction Loan — ${info.lender}</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="badge badge-gold">${fmt(info.commitment)} commitment</span>
+        ${loan?.lastSync ? `<span class="badge badge-gray">QB ${loan.lastSync}</span>` : ''}
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+      ${stat('💰 Commitment', fmt(info.commitment))}
+      ${stat('📉 Drawn (owed)', drawnTxt, 'var(--red)')}
+      ${stat('✅ Available to Draw', availTxt, 'var(--green)')}
+      ${stat('📈 Rate', rateTxt)}
+      ${stat('🗓️ Est. Interest', moTxt, 'var(--text-muted)')}
+    </div>
+    <div style="background:var(--surface2);border-radius:999px;height:14px;overflow:hidden;margin-bottom:6px;">
+      <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--gold),var(--red));border-radius:999px;"></div>
+    </div>
+    <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:14px;">${hasDrawn ? `${pct}% of commitment drawn · ${fmt(available)} still available` : 'Outstanding balance auto-syncs nightly from QuickBooks once the loan-account sync is connected.'}</div>
+
+    <div style="font-weight:700;color:var(--gold);font-size:0.82rem;margin-bottom:8px;">Loan Closing Costs — ${fmt(info.closingCosts)} <span style="color:var(--text-muted);font-weight:400;">(in Loan / Financing phase)</span></div>
+    <div class="table-wrap"><table class="budget-line-table">
+      <thead><tr><th>Item</th><th style="text-align:right;">Amount</th></tr></thead>
+      <tbody>${breakdown}
+        <tr style="font-weight:700;border-top:2px solid var(--border);"><td>Total cash to close</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${fmt(info.closingCosts)}</td></tr>
+      </tbody>
+    </table></div>
+    <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">
+      Borrower: ${info.borrower} · Settled ${info.settled} · ${info.interestType === 'interest-only' ? 'Interest-only on drawn balance' : info.interestType}${info.maturity ? ' · Matures ' + info.maturity : ''}. 330 Roddy Branch is Falcon cash — no loan.
+    </div>
+  </div>`;
+}
+
 function renderMaterials(project) {
   const el = document.getElementById('materials-' + project);
   if (!el) return;
@@ -2396,6 +2491,7 @@ function init() {
   renderPhaseBudget('330'); renderPhaseBudget('326');
   renderMaterials('330'); renderMaterials('326');
   renderFinishes('330'); renderFinishes('326');
+  renderLoan('326');
   refreshEmployeeSelects();
   refreshProjectDropdown();
   refreshCostCodeDropdown();
