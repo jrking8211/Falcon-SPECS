@@ -795,6 +795,20 @@ const PHASE_BUDGET_DEFAULT = {
   '326': { 'Lot Acquired':75000, 'Permits, Design & Soft Costs':22000, 'Foundation':50000, 'Framing & Exterior Shell':185000, 'MEP Rough-in':90000, 'Drywall & Insulation':25000, 'Interior Finishes':80000, 'Exterior Finishes':20000, 'Punch List':10000, 'Listing / Sale':5000, 'Loan / Financing':20000 },
 };
 
+// Industry-average share of CONSTRUCTION cost by phase, based on NAHB's
+// "Cost of Constructing a Home" study (site work folded into Foundation;
+// framing+roof+siding+windows into Framing & Exterior Shell). Sums to 100%.
+// Excludes lot, soft costs, loan & listing — those aren't "build" costs.
+const INDUSTRY_PCT = {
+  'Foundation': 16,
+  'Framing & Exterior Shell': 33,
+  'MEP Rough-in': 14,
+  'Drywall & Insulation': 5,
+  'Interior Finishes': 24,
+  'Exterior Finishes': 5,
+  'Punch List': 3,
+};
+
 // Roll-up status for a phase from its sub-stage completion.
 function phaseStageStatus(project, phaseName) {
   const stages = PHASE_STAGES[phaseName] || [];
@@ -1736,6 +1750,52 @@ function renderPhaseBudget(project) {
       ${predMap ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-top:8px;font-style:italic;">
         🔮 Estimates predicted from 330: completed 330 phases use <strong>actual cost</strong> (↗330·act), the rest use 330's plan — adjusted +${((SIZE_FACTOR_326 - 1) * 100).toFixed(1)}% for size, with a +${Math.round((PHASE_PREMIUM_326['Framing & Exterior Shell'] - 1) * 100)}% premium on Framing/Exterior for the 9:12 roof + dormer. Lot &amp; Loan aren't predicted. Edit any phase to pin it.${hasPinned ? ` <a onclick="resetPredict326()" style="color:var(--gold);cursor:pointer;text-decoration:underline;">Reset ${Object.keys(ov326).length} pinned</a>` : ''}
       </div>` : ''}
+      ${benchmarkBlock(phases, project)}
+    </div>`;
+}
+
+// Bar-chart comparison of this home's per-phase build cost vs the NAHB
+// industry-average allocation, applied to this home's projected construction total.
+function benchmarkBlock(phases, project) {
+  const bench = phases.filter(p => INDUSTRY_PCT[p.phase] != null);
+  if (!bench.length) return '';
+  const cTotal = bench.reduce((s, p) => s + p.budget, 0) || 1;
+  const cSpent = bench.reduce((s, p) => s + p.spent, 0);
+  const maxV = Math.max(1, ...bench.map(p => Math.max(p.budget, cTotal * INDUSTRY_PCT[p.phase] / 100)));
+  const sqft = (PLAN_DATA[project] && PLAN_DATA[project].sqftTotal) || 0;
+  const rows = bench.map(p => {
+    const your = p.budget;
+    const ind  = cTotal * INDUSTRY_PCT[p.phase] / 100;
+    const yPct = Math.round(your / cTotal * 100);
+    const diff = ind > 0 ? Math.round((your / ind - 1) * 100) : 0;
+    const dColor = Math.abs(diff) <= 10 ? 'var(--green)' : (diff > 0 ? 'var(--red)' : 'var(--blue)');
+    return `<div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;font-size:0.78rem;margin-bottom:2px;">
+        <span style="font-weight:600;">${p.phase}</span>
+        <span style="color:${dColor};font-weight:700;">${diff > 0 ? '+' : ''}${diff}% vs avg</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="width:62px;font-size:0.64rem;color:var(--gold);text-align:right;">This home</span>
+        <div style="flex:1;height:11px;background:var(--surface2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${your / maxV * 100}%;background:var(--gold);border-radius:6px;"></div></div>
+        <span style="width:74px;font-size:0.66rem;font-variant-numeric:tabular-nums;">${fmt(your)}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:2px;">
+        <span style="width:62px;font-size:0.64rem;color:var(--blue);text-align:right;">Industry</span>
+        <div style="flex:1;height:11px;background:var(--surface2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${ind / maxV * 100}%;background:var(--blue);border-radius:6px;"></div></div>
+        <span style="width:74px;font-size:0.66rem;font-variant-numeric:tabular-nums;color:var(--text-muted);">${fmt(ind)} · ${INDUSTRY_PCT[p.phase]}%</span>
+      </div>
+    </div>`;
+  }).join('');
+  return `
+    <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+        <div style="font-weight:700;color:var(--gold);font-size:0.82rem;">Cost vs. Industry Benchmark</div>
+        <div style="font-size:0.7rem;color:var(--text-muted);">Build total <strong style="color:var(--text);">${fmt(cTotal)}</strong>${sqft ? ` · ${fmt(Math.round(cTotal / sqft))}/sqft` : ''} · spent ${fmt(cSpent)}</div>
+      </div>
+      ${rows}
+      <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px;font-style:italic;">
+        Gold = this home's projected cost per phase; blue = NAHB industry-average share of construction cost applied to this home's build total. <span style="color:var(--green);">Green</span> = within ±10% of average, <span style="color:var(--red);">red</span> = above, <span style="color:var(--blue);">blue</span> = below. Lot, soft costs, loan &amp; listing excluded. Source: NAHB “Cost of Constructing a Home.”
+      </div>
     </div>`;
 }
 
