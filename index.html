@@ -983,7 +983,7 @@ const MATERIALS = {
     { item: 'Interior doors', vendor: 'TBD', cost: 0, status: 'ordered', neededBy: '2026-06-15' },
     { item: 'Plumbing rough-in + materials (incl. upstairs bath add-on)', vendor: 'Priority Plumbing LLC', cost: 9000, status: 'ordered', neededBy: '2026-06-25' },
     { item: 'Electrical fixtures', vendor: 'Phoenix Electric / TBD', cost: 0, status: 'not-ordered', neededBy: '2026-07-05' },
-    { item: 'HVAC final setout (~$22K pending)', vendor: 'Construction Services One', cost: 0, status: 'ordered', neededBy: '2026-09-15' },
+    { item: 'HVAC final setout (~$22K pending)', vendor: 'A1 Finchum', cost: 0, status: 'ordered', neededBy: '2026-09-15' },
     { item: 'Masonry labor (brick veneer)', vendor: 'Construction Services One', cost: 19626, status: 'installed', neededBy: '2026-03-01' },
     { item: 'Appliances', vendor: 'Costco', cost: 0, status: 'not-ordered', neededBy: '2026-07-25' },
     { item: 'Hardware (knobs / pulls)', vendor: 'TBD', cost: 0, status: 'not-ordered', neededBy: '2026-07-10' },
@@ -1710,8 +1710,18 @@ function glVendorTotals(project) {
 // Returns {total, keys} or null when no distinctive token / no match.
 function qbActualForVendor(vendor, glTotals) {
   const toks = vendorTokens(vendor);
-  if (!toks.length) return null;
   let total = 0; const keys = [];
+  if (!toks.length) {
+    // Vendor name is all generic words (e.g. "Construction Services One") — no
+    // distinctive token, so fall back to a full-phrase containment match.
+    const norm = normVendor(vendor);
+    if (norm.length < 6) return null;
+    Object.entries(glTotals).forEach(([k, v]) => {
+      const pn = normVendor(v.name);
+      if (pn.includes(norm) || (pn.length >= 6 && norm.includes(pn))) { total += v.total; keys.push(k); }
+    });
+    return keys.length ? { total: Math.round(total * 100) / 100, keys } : null;
+  }
   Object.entries(glTotals).forEach(([k, v]) => {
     const payeeWords = normVendor(v.name).split(' '); // whole-word match (witt ≠ dewitt)
     if (toks.some(t => payeeWords.includes(t))) { total += v.total; keys.push(k); }
