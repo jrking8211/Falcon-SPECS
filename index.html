@@ -980,7 +980,7 @@ const MATERIALS = {
     { item: 'Cella — proposal accepted', vendor: 'Net terms (no deposit)', cost: 0, status: 'installed', neededBy: '2026-05-25' },
     { item: 'Trim package', vendor: 'Witt Building Material', cost: 0, status: 'ordered', neededBy: '2026-06-08' },
     { item: 'Interior doors', vendor: 'TBD', cost: 0, status: 'ordered', neededBy: '2026-06-15' },
-    { item: 'Plumbing fixtures', vendor: 'Ferguson + Priority Plumbing', cost: 9501, status: 'ordered', neededBy: '2026-06-25' },
+    { item: 'Plumbing rough-in + materials (incl. upstairs bath add-on)', vendor: 'Priority Plumbing LLC', cost: 9000, status: 'ordered', neededBy: '2026-06-25' },
     { item: 'Electrical fixtures', vendor: 'Phoenix Electric / TBD', cost: 0, status: 'not-ordered', neededBy: '2026-07-05' },
     { item: 'HVAC final setout (~$22K pending)', vendor: 'Construction Services One', cost: 0, status: 'ordered', neededBy: '2026-09-15' },
     { item: 'Masonry labor (brick veneer)', vendor: 'Construction Services One', cost: 19626, status: 'installed', neededBy: '2026-03-01' },
@@ -991,6 +991,7 @@ const MATERIALS = {
     { item: 'Soffit & Fascia install labor', vendor: 'Robbins Siding & Guttering', cost: 4834, status: 'installed', neededBy: '2026-05-08' },
     { item: 'Downspouts (bill pending)', vendor: 'Robbins Siding & Guttering', cost: 0, status: 'ordered', neededBy: '2026-06-30' },
     { item: 'Garage door', vendor: 'Farmer Garage Door', cost: 5400, status: 'ordered', neededBy: '2026-07-01' },
+    { item: 'Plumbing materials — fiberglass shower (upstairs bath add-on)', vendor: 'Ferguson', cost: 950, status: 'ordered', neededBy: '2026-06-25' },
   ],
   '326': []  // populated from the 330 template just below
 };
@@ -1831,10 +1832,12 @@ function renderMaterials(project) {
   const rollupRows = Object.values(groups).map(g => {
     g.keys.forEach(k => matchedKeys.add(k));
     let name = g.glName;
-    if (g.keys.length) { // prefer a fuller material-vendor name that contains the GL name (e.g. "...LLC")
-      const glNorm = normVendor(g.glName);
-      const better = g.members.filter(Boolean).filter(s => normVendor(s).includes(glNorm)).sort((a, b) => a.length - b.length)[0];
-      if (better) name = better;
+    const named = g.members.filter(Boolean);
+    if (g.keys.length && named.length) { // label with the material-vendor name (cleaner than raw GL payees)
+      const glToks = new Set(vendorTokens(g.glName));
+      name = named
+        .map(s => ({ s, ov: vendorTokens(s).filter(t => glToks.has(t)).length }))
+        .sort((a, b) => b.ov - a.ov || a.s.length - b.s.length)[0].s;
     }
     const actual = g.actual !== null ? Math.round(g.actual * 100) / 100 : null;
     const variance = actual !== null ? Math.round((actual - g.est) * 100) / 100 : null;
