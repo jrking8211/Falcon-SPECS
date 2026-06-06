@@ -1717,6 +1717,53 @@ function qbActualForVendor(vendor, glTotals) {
   return keys.length ? { total: Math.round(total * 100) / 100, keys } : null;
 }
 
+// Per-vendor GL lines (keeps memo so multi-row vendors can be split by description).
+function glVendorLines(project) {
+  const rows = parseGLRows(S.get('gl_' + project, null)) || [];
+  const map = {};
+  rows.forEach(r => {
+    const key = normVendor((r.payee || '').trim());
+    if (!key) return;
+    (map[key] = map[key] || { lines: [] }).lines.push({ memo: r.memo || '', amount: Number(r.amount) || 0 });
+  });
+  return map;
+}
+
+// Distinctive words from a material item name (for memo-based splitting).
+function itemDiscTokens(item) {
+  return normVendor(item).split(' ').filter(t => t.length >= 4 && !GENERIC_VENDOR_WORDS.has(t));
+}
+
+// Resolve each material row's QB actual. When several rows share one GL vendor,
+// split that vendor's lines by description (interior vs exterior, etc.). Falls
+// back to the old "first row gets the total" behaviour if no memo distinguishes.
+// Returns { [_i]: { value, mode } } where mode ∈ none|full|split|dup.
+function computeRowQB(items, glTotals, glLines) {
+  const byId = {}; items.forEach(it => byId[it._i] = it);
+  const info = {}; const groups = {};
+  items.forEach(it => {
+    const m = qbActualForVendor(it.vendor, glTotals);
+    info[it._i] = { value: null, mode: m ? null : 'none' };
+    if (m) { const gk = m.keys.slice().sort().join('|'); info[it._i]._total = m.total; (groups[gk] = groups[gk] || []).push(it._i); }
+  });
+  Object.entries(groups).forEach(([gk, idxs]) => {
+    if (idxs.length === 1) { info[idxs[0]].value = info[idxs[0]]._total; info[idxs[0]].mode = 'full'; return; }
+    const lines = [];
+    gk.split('|').forEach(k => (glLines[k]?.lines || []).forEach(l => lines.push(l)));
+    const wordSets = {}; idxs.forEach(i => wordSets[i] = new Set(itemDiscTokens(byId[i].item)));
+    const uniq = {}; idxs.forEach(i => uniq[i] = [...wordSets[i]].filter(t => !idxs.some(j => j !== i && wordSets[j].has(t))));
+    const sums = {}; idxs.forEach(i => sums[i] = 0); let matchedAny = 0;
+    lines.forEach(l => {
+      const memo = normVendor(l.memo);
+      const hit = idxs.filter(i => uniq[i].some(t => memo.includes(t)));
+      if (hit.length === 1) { sums[hit[0]] += l.amount; matchedAny += l.amount; }
+    });
+    if (Math.abs(matchedAny) >= 1) idxs.forEach(i => { info[i].value = Math.round(sums[i] * 100) / 100; info[i].mode = 'split'; });
+    else idxs.forEach((i, n) => { if (n === 0) { info[i].value = info[i]._total; info[i].mode = 'full'; } else info[i].mode = 'dup'; });
+  });
+  return info;
+}
+
 function renderMaterials(project) {
   const el = document.getElementById('materials-' + project);
   if (!el) return;
@@ -1732,19 +1779,19 @@ function renderMaterials(project) {
   const committed = items.reduce((s,i) => s + (i.cost||0), 0);
   const lbl = s => (s||'').replace('-',' ');
   const glTotals = glVendorTotals(project);
+  const glLines = glVendorLines(project);
+  const rowQB = computeRowQB(items, glTotals, glLines);
 
   // Stable order while editing; status/date sort in view mode.
   const rows = editMode ? items
     : items.slice().sort((a,b) => order[a.status]-order[b.status] || new Date(a.neededBy||0)-new Date(b.neededBy||0));
 
-  const seenVendor = {};
   const body = rows.map(i => {
-    const vKey = normVendor(i.vendor);
-    const m = qbActualForVendor(i.vendor, glTotals);
+    const q = rowQB[i._i] || { mode: 'none' };
     let actualCell;
-    if (!m) actualCell = '<span style="color:var(--text-muted);">—</span>';
-    else if (seenVendor[vKey]) actualCell = '<span style="color:var(--text-muted);font-size:0.7rem;">↑ vendor total</span>';
-    else { seenVendor[vKey] = true; actualCell = `<span style="color:var(--blue);font-variant-numeric:tabular-nums;">${fmt(m.total)}</span>`; }
+    if (q.mode === 'none' || q.value === null && q.mode !== 'dup') actualCell = '<span style="color:var(--text-muted);">—</span>';
+    else if (q.mode === 'dup') actualCell = '<span style="color:var(--text-muted);font-size:0.7rem;">↑ vendor total</span>';
+    else actualCell = `<span style="color:var(--blue);font-variant-numeric:tabular-nums;">${fmt(q.value)}</span>${q.mode==='split'?'<span style="color:var(--text-muted);font-size:0.62rem;display:block;">split by description</span>':''}`;
 
     const itemCell   = editMode ? `<input class="mat-input" value="${esc(i.item)}" onchange="saveMaterialField('${project}',${i._i},'item',this.value)">` : i.item;
     const vendorCell = editMode ? `<input class="mat-input" value="${esc(i.vendor||'')}" onchange="saveMaterialField('${project}',${i._i},'vendor',this.value)">` : `<span style="color:var(--text-muted);font-size:0.8rem;">${i.vendor}</span>`;
