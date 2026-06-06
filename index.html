@@ -1834,8 +1834,9 @@ function renderLoan(project) {
   let drawn = null;
   if (loan) {
     if (loan.reportJson || loan.rows || loan.rowsJson || loan.Rows) {
+      // A synced register (even an empty one) means drawn = 0, not "unknown".
       const rows = parseGLRows(loan) || [];
-      if (rows.length) drawn = Math.abs(Math.round(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0) * 100) / 100);
+      drawn = Math.abs(Math.round(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0) * 100) / 100);
     } else if (loan.balance != null && loan.balance !== '') {
       drawn = Number(loan.balance);
     }
