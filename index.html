@@ -802,11 +802,56 @@ function phaseStageStatus(project, phaseName) {
   return { done, started, total: stages.length, status };
 }
 
-// Current $ allocation for a phase (stored admin override → default).
+// ─── 326 cost prediction from 330 (mirror build) ──────────────
+// 326 Roddy is a near-mirror of 330 (Laurelwood). Predict each construction
+// phase's estimate from 330: where 330 has FINISHED the phase use its actual
+// cost; otherwise use 330's projected budget. Adjusted for 326 being slightly
+// larger (+sqft) with a steeper 9:12 roof + dormer (Framing/Exterior premium).
+// Lot Acquired & Loan/Financing are project-specific and never predicted.
+const SIZE_FACTOR_326 = 2796 / 2769;                            // ≈ 1.0097 (+1.0%)
+const PHASE_PREMIUM_326 = { 'Framing & Exterior Shell': 1.08 }; // 9:12 roof + dormer
+const PREDICT_EXCLUDE_326 = new Set(['Lot Acquired', 'Loan / Financing']);
+
+function predict326On() { return localStorage.getItem('fd_predict_326') !== '0'; } // default ON
+function setPredict326(on) {
+  localStorage.setItem('fd_predict_326', on ? '1' : '0');
+  renderPhaseBudget('326'); renderBudget('326'); renderProjectDetail('326');
+}
+function resetPredict326() { // clear pinned (manually-edited) 326 phases
+  S.set('phasebudget_326', {});
+  renderPhaseBudget('326'); renderBudget('326'); renderProjectDetail('326');
+}
+
+let _pred326Cache = { key: null, map: null };
+function predictedBudget326() {
+  const key = (S.get('gl_330', null)?.lastSync || '') + '|' +
+              JSON.stringify(S.get('phasestages_330', {})) + '|' +
+              JSON.stringify(S.get('phasebudget_330', {}));
+  if (_pred326Cache.key === key && _pred326Cache.map) return _pred326Cache.map;
+  const base = computePhases('330');
+  const spent = {}; base.rows.forEach(r => spent[r.phase] = r.spent);
+  const map = {};
+  PHASE_ORDER.forEach(phase => {
+    if (PREDICT_EXCLUDE_326.has(phase)) return;
+    const done = phaseStageStatus('330', phase).status === 'done';
+    const basis = done ? (spent[phase] || 0) : phaseBudget('330', phase);
+    map[phase] = { value: Math.round(basis * SIZE_FACTOR_326 * (PHASE_PREMIUM_326[phase] || 1)),
+                   basis: done ? 'actual' : 'plan' };
+  });
+  _pred326Cache = { key, map };
+  return map;
+}
+
+// Current $ allocation for a phase: manual override → 326 prediction → default.
 function phaseBudget(project, phaseName) {
   const ov = S.get('phasebudget_' + project, {});
   const v = ov[phaseName];
-  return (v === undefined || v === null || v === '') ? (PHASE_BUDGET_DEFAULT[project]?.[phaseName] || 0) : Number(v);
+  if (v !== undefined && v !== null && v !== '') return Number(v);     // pinned manual edit wins
+  if (project === '326' && predict326On() && !PREDICT_EXCLUDE_326.has(phaseName)) {
+    const pm = predictedBudget326();
+    if (pm[phaseName]) return pm[phaseName].value;                     // live-predicted from 330
+  }
+  return PHASE_BUDGET_DEFAULT[project]?.[phaseName] || 0;
 }
 
 // Auto-derive the "Current Phase" header label from stage progress: the leading
@@ -1627,6 +1672,14 @@ function renderPhaseBudget(project) {
   const syncBadge = computed.hasData
     ? `<span class="qb-live">● Live from QB${computed.lastSync ? ' · ' + computed.lastSync : ''}</span>`
     : `<span class="badge badge-gray">Awaiting QB sync</span>`;
+  const predMap = (project === '326' && predict326On()) ? predictedBudget326() : null;
+  const ov326 = project === '326' ? S.get('phasebudget_326', {}) : {};
+  const hasPinned = Object.keys(ov326).length > 0;
+  const isPredicted = ph => predMap && !PREDICT_EXCLUDE_326.has(ph) &&
+    (ov326[ph] === undefined || ov326[ph] === null || ov326[ph] === '');
+  const predToggle = project === '326'
+    ? `<button class="edit-toggle${predict326On() ? ' on' : ''}" onclick="setPredict326(${!predict326On()})" title="Predict 326 estimates from 330's actual + projected costs">🔮 ${predict326On() ? 'Predicting from 330' : 'Predict from 330'}</button>`
+    : '';
   el.innerHTML = `
     <div class="card">
       <div class="section-header">
@@ -1634,6 +1687,7 @@ function renderPhaseBudget(project) {
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           ${syncBadge}
           <span class="badge badge-gold">${fmt(totalSpent)} / ${fmt(totalBudget)}</span>
+          ${predToggle}
         </div>
       </div>
       <div class="table-wrap"><table class="budget-line-table">
@@ -1648,7 +1702,7 @@ function renderPhaseBudget(project) {
             <td style="text-align:right;font-variant-numeric:tabular-nums;${over?'color:var(--red);font-weight:600;':''}">${fmt(p.spent)}</td>
             <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-muted);">${editMode
               ? `<input type="number" class="alloc-input" value="${p.budget}" onchange="savePhaseBudget('${project}',${i},this.value)">`
-              : fmt(p.budget)}</td>
+              : `${fmt(p.budget)}${isPredicted(p.phase) ? ` <span style="color:var(--gold);font-size:0.6rem;" title="Predicted from 330 — ${predMap[p.phase].basis === 'actual' ? '330 actual cost (phase complete)' : "330's plan (in progress)"}">↗330${predMap[p.phase].basis === 'actual' ? '·act' : ''}</span>` : ''}`}</td>
             <td>
               <span style="color:${statusColor[p.status]};font-weight:700;font-size:0.8rem;">${PHASE_STATUS_LABEL[p.status]}</span>
               <span style="color:var(--text-muted);font-size:0.72rem;"> ${p.stageDone}/${p.stageTotal}</span>
@@ -1659,6 +1713,9 @@ function renderPhaseBudget(project) {
         <tr class="total-row"><td>TOTAL SPENT TO DATE</td><td style="text-align:right;">${fmt(totalSpent)}</td><td style="text-align:right;">${fmt(totalBudget)}</td><td></td></tr>
         </tbody>
       </table></div>
+      ${predMap ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-top:8px;font-style:italic;">
+        🔮 Estimates predicted from 330: completed 330 phases use <strong>actual cost</strong> (↗330·act), the rest use 330's plan — adjusted +${((SIZE_FACTOR_326 - 1) * 100).toFixed(1)}% for size, with a +${Math.round((PHASE_PREMIUM_326['Framing & Exterior Shell'] - 1) * 100)}% premium on Framing/Exterior for the 9:12 roof + dormer. Lot &amp; Loan aren't predicted. Edit any phase to pin it.${hasPinned ? ` <a onclick="resetPredict326()" style="color:var(--gold);cursor:pointer;text-decoration:underline;">Reset ${Object.keys(ov326).length} pinned</a>` : ''}
+      </div>` : ''}
     </div>`;
 }
 
