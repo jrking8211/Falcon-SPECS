@@ -251,7 +251,6 @@
   <img src="logo.png" alt="Falcon Development" class="logo-img">
   <div style="display:flex;align-items:center;gap:10px;">
     <span id="sync-status"></span>
-    <button class="sync-btn" onclick="showSyncHelp()">⟳ Sync QB</button>
     <button class="sync-btn" style="background:var(--surface2);color:var(--text);" onclick="lockSite()" title="Lock dashboard">🔒</button>
   </div>
 </header>
@@ -520,25 +519,6 @@
       <button class="btn btn-secondary" style="flex:1;" onclick="document.getElementById('emp-modal').style.display='none'">Cancel</button>
     </div>
     <div class="pin-error" id="emp-error"></div>
-  </div>
-</div>
-
-<!-- QB SYNC MODAL -->
-<div class="modal-overlay" id="sync-modal" style="display:none;">
-  <div class="modal" style="width:380px;text-align:left;">
-    <h2 style="margin-bottom:12px;">Sync from QuickBooks</h2>
-    <p style="color:var(--text-muted);font-size:0.83rem;margin-bottom:12px;">Current QB Inventory Asset balances (as of today):</p>
-    <div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:14px;font-size:0.88rem;">
-      <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-        <span>330 Roddy Branch</span><strong style="color:var(--gold);">$420,669.44</strong>
-      </div>
-      <div style="display:flex;justify-content:space-between;">
-        <span>326 Roddy Branch</span><strong style="color:var(--gold);">$96,088.10</strong>
-      </div>
-    </div>
-    <p style="color:var(--text-muted);font-size:0.83rem;margin-bottom:10px;">To update with the latest QB figures, go to <strong style="color:var(--text);">Admin → Budget / Cost Data</strong> and enter the current Inventory Asset balance from QB's Balance Sheet report.</p>
-    <p style="color:var(--text-muted);font-size:0.78rem;">For fully automatic live sync, a server-side QB integration can be added later.</p>
-    <button class="btn btn-primary" style="width:100%;margin-top:18px;" onclick="document.getElementById('sync-modal').style.display='none'">Got It</button>
   </div>
 </div>
 
@@ -2234,7 +2214,6 @@ function switchTab(name) {
   if (name==='admin') { renderAdminEntries(); renderBudgetEditor(); renderEmployeeList(); refreshEmployeeSelects(); }
 }
 
-function showSyncHelp() { document.getElementById('sync-modal').style.display='flex'; }
 
 // ─── TOAST ─────────────────────────────────────────────────────
 function toast(msg, type='success') {
