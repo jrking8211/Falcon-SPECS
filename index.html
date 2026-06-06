@@ -534,7 +534,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','market_data'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -605,6 +605,15 @@ function initFirebase() {
         handleFirestoreUpdate(key);
         return;
       }
+      // Market data (comps/pricing) written by the weekly brief agent:
+      // { json: "<JSON string>", updated: "YYYY-MM-DD" }.
+      if (key === 'market_data') {
+        const data = snap.data();
+        if (!data) return;
+        S.setLocal(key, data);
+        handleFirestoreUpdate(key);
+        return;
+      }
       const incoming = snap.data()?.value;
       if (incoming === undefined) return;
       if (JSON.stringify(S.get(key, null)) === JSON.stringify(incoming)) return;
@@ -645,6 +654,7 @@ function handleFirestoreUpdate(key) {
   else if (key === 'finishes_330')    renderFinishes('330');
   else if (key === 'finishes_326')    renderFinishes('326');
   else if (key === 'loan_326')        renderLoan('326');
+  else if (key === 'market_data')     { renderProjectDetail('330'); renderProjectDetail('326'); }
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
 }
@@ -707,7 +717,7 @@ const PLAN_DATA = {
     },
     projectedSalePrice: 775000,
     commissionRate: 0.03,
-    compNotes: 'Listed at $775,000 ($279/sqft). Reflects new construction quality, finish level, lot value, and 3/3 with bonus room. Same-road resale comp (515 Roddy Branch, 1,596sqft 3/2, $285K Dec 2024) is not comparable in size or quality.'
+    compNotes: 'Listed at $775,000 (~$280/sqft), 4bd/3ba. Priced in line with the 334 Roddy Branch new-construction comp ($282/sqft); the creek-bordering lot and premium finishes support the top of the local range.'
   },
   '326': {
     name: '326 Roddy Branch',
@@ -747,7 +757,7 @@ const PLAN_DATA = {
     },
     projectedSalePrice: 775000,
     commissionRate: 0.03,
-    compNotes: 'Listed at $775,000 ($277/sqft). MLS comp analysis supports this price point. Mirrored plan of 330 — right-entry garage, dormer, 2,796sqft 3/3 with full bonus bath upstairs.'
+    compNotes: 'Mirror of 330 (4bd/3ba) with a steeper 9:12 roof + dormer and right-entry garage. At the $282/sqft comp basis, 2,796 sqft supports a list near $789K–$799K at completion; the $775K target is conservative.'
   }
 };
 
@@ -1501,6 +1511,25 @@ function removeEmployee(idx) {
   refreshEmployeeSelects(); renderEmployeeList(); toast('Employee removed.');
 }
 
+// ─── MARKET DATA (comps & pricing) — refreshed weekly by the brief agent ──
+// Seeded with the latest research; the weekly scheduled task overwrites the
+// Firestore 'market_data' doc ({json,updated}) so dashboard == realtor brief.
+const MARKET_DEFAULT = {
+  updated: '2026-06-06',
+  psfBasis: 282,
+  comps: [
+    { tag: 'Anchor Comp — Same Road', title: '334 Roddy Branch Rd', line: '2,064 sqft · 3bd/2.5ba · New construction 2025', price: '$581,250', note: 'Sold Dec 2025 · $282/sqft' },
+    { tag: 'Recent Area Sale', title: '1015 Martin Mill Pike', line: '1,846 sqft · Built 2022', price: '$725,000', note: 'Sold Mar 2026 · $393/sqft' },
+    { tag: 'Blount County Market', title: 'County avg home value', line: 'Median ~34 days on market · balanced', price: '$379,002', note: '+0.6% YoY · +2–4% forecast 2026' },
+    { tag: 'New Construction', title: 'Blount County new builds', line: '~110–140 active new-construction listings', price: '$425K median list', note: 'Premium new constr. ≈ $280/sqft' },
+  ],
+};
+function getMarketData() {
+  const doc = S.get('market_data', null);
+  if (doc && doc.json) { try { const m = JSON.parse(doc.json); if (m && m.comps) return m; } catch {} }
+  return MARKET_DEFAULT;
+}
+
 // ─── PROJECT DETAIL (specs, budget breakdown, comps) ──────────
 function renderProjectDetail(project) {
   const container = document.getElementById('projdetail-' + project);
@@ -1508,6 +1537,7 @@ function renderProjectDetail(project) {
   const p = PLAN_DATA[project];
   if (!p || !p.sqftTotal) { container.innerHTML = ''; return; }
 
+  const market = getMarketData();
   const qbSpent = QB_INVENTORY[project].balance;
   const budgetEntries = Object.entries(p.budget);
   const totalBudgetLines = budgetEntries.reduce((s, [, v]) => s + v.projected, 0);
@@ -1612,24 +1642,15 @@ function renderProjectDetail(project) {
       <div class="card">
         <div class="card-title">Comparable Sales &amp; Pricing</div>
         <div class="comp-box">
-          <strong>Market: Rockford / Blount County, TN</strong><br>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;">
+            <strong>Market: Rockford / Blount County, TN</strong>
+            <span style="font-size:0.7rem;color:var(--text-muted);">Comps updated ${market.updated}${market.psfBasis?` · basis $${market.psfBasis}/sqft`:''}</span>
+          </div>
           <div style="margin-top:10px;display:grid;gap:8px;">
-            <div style="background:var(--surface);border-radius:6px;padding:10px;">
-              <div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">Direct Comp — Same Road</div>
-              <strong style="color:var(--text);">515 Roddy Branch Rd</strong><br>
-              1,596 sqft · 3bd/2ba · Nearly-new<br>
-              Sold <strong style="color:var(--gold);">$285,000</strong> · Dec 2024 · $178/sqft
-            </div>
-            <div style="background:var(--surface);border-radius:6px;padding:10px;">
-              <div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">Rockford 37853 Market</div>
-              Avg price/sqft: <strong style="color:var(--text);">$208</strong><br>
-              Median home price: <strong style="color:var(--text);">$372,500</strong>
-            </div>
-            <div style="background:var(--surface);border-radius:6px;padding:10px;">
-              <div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">Blount County New Construction</div>
-              Median list: <strong style="color:var(--text);">$425K</strong> · $/sqft: <strong style="color:var(--text);">$217–$228</strong><br>
-              Maryville new construction median: <strong style="color:var(--text);">$415K</strong>
-            </div>
+            ${market.comps.map(c => `<div style="background:var(--surface);border-radius:6px;padding:10px;">
+              <div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">${c.tag||''}</div>
+              ${c.title?`<strong style="color:var(--text);">${c.title}</strong><br>`:''}${c.line?`${c.line}<br>`:''}${c.price?`<strong style="color:var(--gold);">${c.price}</strong>`:''}${c.note?` · ${c.note}`:''}
+            </div>`).join('')}
           </div>
           <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
             <div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;">Recommended List Price</div>
