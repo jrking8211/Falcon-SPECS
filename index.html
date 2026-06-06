@@ -1810,17 +1810,35 @@ function renderMaterials(project) {
   }).join('');
 
   // Vendor roll-up: materials estimate vs QB actual vs variance.
-  const byVendor = {};
+  // Group material rows by the GL vendor they match, so several rows feeding one
+  // QB vendor (e.g. interior + exterior paint → Universal Painting) collapse to a
+  // single line — the QB actual is the vendor total, counted once.
+  const groups = {};
   items.forEach(i => {
-    const k = normVendor(i.vendor) || '—';
-    (byVendor[k] = byVendor[k] || { name: i.vendor || '—', est: 0 }).est += i.cost || 0;
+    const m = qbActualForVendor(i.vendor, glTotals);
+    if (m) {
+      const keys = m.keys.slice().sort();
+      const gk = 'qb:' + keys.join('|');
+      const g = groups[gk] = groups[gk] || { est: 0, keys, actual: m.total, members: [], glName: keys.map(k => glTotals[k]?.name || k).join(', ') };
+      g.est += i.cost || 0; g.members.push((i.vendor || '').trim());
+    } else {
+      const gk = 'raw:' + (normVendor(i.vendor) || '—');
+      const g = groups[gk] = groups[gk] || { est: 0, keys: [], actual: null, members: [], glName: i.vendor || '—' };
+      g.est += i.cost || 0;
+    }
   });
   const matchedKeys = new Set();
-  const rollupRows = Object.values(byVendor).map(v => {
-    const m = qbActualForVendor(v.name, glTotals);
-    if (m) m.keys.forEach(k => matchedKeys.add(k));
-    const variance = m ? Math.round((m.total - v.est) * 100) / 100 : null;
-    return { name: v.name, est: v.est, actual: m ? m.total : null, variance };
+  const rollupRows = Object.values(groups).map(g => {
+    g.keys.forEach(k => matchedKeys.add(k));
+    let name = g.glName;
+    if (g.keys.length) { // prefer a fuller material-vendor name that contains the GL name (e.g. "...LLC")
+      const glNorm = normVendor(g.glName);
+      const better = g.members.filter(Boolean).filter(s => normVendor(s).includes(glNorm)).sort((a, b) => a.length - b.length)[0];
+      if (better) name = better;
+    }
+    const actual = g.actual !== null ? Math.round(g.actual * 100) / 100 : null;
+    const variance = actual !== null ? Math.round((actual - g.est) * 100) / 100 : null;
+    return { name, est: g.est, actual, variance };
   }).sort((a,b) => (b.actual||0) - (a.actual||0) || b.est - a.est);
   // Named QB vendors not tied to a material line (labor subs, lot, soft costs).
   const otherVendors = Object.entries(glTotals)
