@@ -616,11 +616,12 @@ function initFirebase() {
         handleFirestoreUpdate(key);
         return;
       }
-      // Loan balance docs written by Make.com (Pinnacle Bank liability account)
+      // Loan docs written by Make.com (Pinnacle Bank liability account) —
+      // either a register {reportJson,lastSync} or a plain {balance,lastSync}.
       if (key.startsWith('loan_')) {
         const data = snap.data();
-        if (!data || data.balance === undefined) return;
-        S.setLocal(key, { balance: data.balance, lastSync: data.lastSync });
+        if (!data) return;
+        S.setLocal(key, data);
         handleFirestoreUpdate(key);
         return;
       }
@@ -1825,7 +1826,18 @@ function renderLoan(project) {
   if (!info) { el.innerHTML = ''; return; }  // cash-financed projects show nothing
 
   const loan = S.get('loan_' + project, null);
-  const drawn = loan && loan.balance != null && loan.balance !== '' ? Number(loan.balance) : null;
+  // Outstanding balance = sum of the loan-account GL register (reliable; QB's
+  // cached CurrentBalance lags). Accepts either a register doc (reportJson) or
+  // a plain {balance} number, whichever Make.com writes.
+  let drawn = null;
+  if (loan) {
+    if (loan.reportJson || loan.rows || loan.rowsJson || loan.Rows) {
+      const rows = parseGLRows(loan) || [];
+      if (rows.length) drawn = Math.abs(Math.round(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0) * 100) / 100);
+    } else if (loan.balance != null && loan.balance !== '') {
+      drawn = Number(loan.balance);
+    }
+  }
   const hasDrawn = drawn != null && !isNaN(drawn);
   const available = hasDrawn ? Math.max(0, info.commitment - drawn) : null;
   const pct = hasDrawn ? Math.min(100, Math.round((drawn / info.commitment) * 1000) / 10) : 0;
