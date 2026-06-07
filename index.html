@@ -574,7 +574,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids','ap_330','ap_326'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -691,6 +691,8 @@ function handleFirestoreUpdate(key) {
   else if (key === 'phasebudget_326') { renderPhaseBudget('326'); renderBudget('326'); }
   else if (key === 'materials_330')   renderMaterials('330');
   else if (key === 'materials_326')   renderMaterials('326');
+  else if (key === 'ap_330')          renderMaterials('330');
+  else if (key === 'ap_326')          renderMaterials('326');
   else if (key === 'finishes_330')    renderFinishes('330');
   else if (key === 'finishes_326')    renderFinishes('326');
   else if (key === 'loan_326' || key === 'loan_326_investor') renderLoan('326');
@@ -1900,6 +1902,25 @@ function cycleMaterialStatus(project, id) {
   saveMaterialField(project, id, 'status', next);
 }
 
+// Open A/P (unpaid bills) for a project, synced nightly from QuickBooks A/P aging
+// → dashboard/ap_<project> = { bills:[{vendor,amount,due,ref,type}], total, asOf }.
+function getAP(project) { return S.get('ap_' + project, { bills: [], total: 0, asOf: null }); }
+
+// Sum the open A/P balance owed to one vendor (token-match against the bill payees;
+// includes vendor credits as negatives, so a credit that offsets a bill nets to 0).
+function vendorOpenAP(project, vendor) {
+  const bills = getAP(project).bills || [];
+  if (!bills.length || !vendor) return 0;
+  const toks = vendorTokens(vendor);
+  const norm = normVendor(vendor);
+  return bills.reduce((sum, b) => {
+    const bw = normVendor(b.vendor);
+    const hit = toks.length ? toks.some(t => bw.split(' ').includes(t))
+                            : (norm.length >= 6 && (bw.includes(norm) || norm.includes(bw)));
+    return hit ? sum + (Number(b.amount) || 0) : sum;
+  }, 0);
+}
+
 // ── QB vendor matching: tie live GL spend to material vendors by name ──
 const GENERIC_VENDOR_WORDS = new Set(['the','and','llc','inc','co','company','services','service','building','materials','material','design','group','enterprises','one','plumbing','electric','electrical','painting','flooring','construction','supply','center','tbd','confirm','net','terms']);
 function normVendor(s) { return (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -2271,13 +2292,17 @@ function renderMaterials(project) {
     if (!row.estSrc && (m.cost || 0) > 0 && !row.actual) { row.est = Number(m.cost); row.estSrc = 'manual'; } // manual estimate yields to real GL spend once invoiced
   });
 
-  // ── totals + QB-driven status (derived from estimate vs. actual GL spend) ──
-  // Pending = bid/estimate on file, nothing invoiced yet; Partial = some GL spend
-  // but below the estimate; Invoiced = recorded in QuickBooks (cost on the books).
+  // ── totals + QB-driven status (GL spend + A/P payment state) ──
+  // Pending = estimate on file, nothing billed yet; Invoiced = cost recorded in QB
+  // but a balance is still owed (open A/P); Paid = recorded AND nothing owed.
+  const apData = getAP(project);
   const qbStatus = (r) => {
     const est = r.est || 0, act = r.actual || 0;
-    if (act > 0) return (est > 0 && act < est * 0.99) ? { key: 'partial',  label: 'Partial'  }
-                                                       : { key: 'invoiced', label: 'Invoiced' };
+    if (act > 0) {
+      const open = r.vendor ? vendorOpenAP(project, r.vendor) : 0;
+      return open > 1 ? { key: 'invoiced', label: 'Invoiced' }   // billed, balance owed
+                      : { key: 'paid',     label: 'Paid' };       // billed, paid off
+    }
     if (est > 0) return { key: 'pending', label: 'Pending' };
     return { key: 'none', label: '—' };
   };
@@ -2338,14 +2363,15 @@ function renderMaterials(project) {
         <div style="display:flex;gap:8px;align-items:center;">
           <span class="badge badge-gold">${fmt(totEst)} est</span>
           <span class="badge" style="background:var(--surface2);color:var(--blue);">${fmt(Math.round(totAct))} actual</span>
+          ${(apData.total || 0) > 1 ? `<span class="badge" style="background:rgba(245,135,38,0.16);color:var(--orange);" title="Unpaid bills owed on this project${apData.asOf?' · as of '+apData.asOf:''}">${fmt(Math.round(apData.total))} owed</span>` : ''}
           ${editBtn}
         </div>
       </div>
       <div class="status-legend">
-        ${[['pending','Pending'],['partial','Partial'],['invoiced','Invoiced']].map(([k,l]) => `<span><span class="mat-status ms-${k}">${l}</span> ${counts[k]||0}</span>`).join('')}
+        ${[['pending','Pending'],['invoiced','Invoiced'],['paid','Paid']].map(([k,l]) => `<span><span class="mat-status ms-${k}">${l}</span> ${counts[k]||0}</span>`).join('')}
       </div>
       ${phaseHtml}
-      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Each phase auto-fills from actual QuickBooks spend, split line-by-line — a vendor working across phases (e.g. block labor vs. brick labor) appears under each. <span class="frombid">📋 bid</span> = estimate from a matched bid (edit on the Bids card). Status is QuickBooks-driven: <span class="mat-status ms-pending">Pending</span> (estimate on file, nothing invoiced) → <span class="mat-status ms-partial">Partial</span> → <span class="mat-status ms-invoiced">Invoiced</span> (cost recorded in QB). Color &amp; finish selections are in the card below.</div>
+      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Each phase auto-fills from actual QuickBooks spend, split line-by-line — a vendor working across phases (e.g. block labor vs. brick labor) appears under each. <span class="frombid">📋 bid</span> = estimate from a matched bid (edit on the Bids card). Status is QuickBooks-driven: <span class="mat-status ms-pending">Pending</span> (estimate on file, nothing billed) → <span class="mat-status ms-invoiced">Invoiced</span> (billed, balance still owed) → <span class="mat-status ms-paid">Paid</span> (billed &amp; paid off). Payment state comes from QuickBooks A/P${apData.asOf?', synced '+apData.asOf:''}. Color &amp; finish selections are in the card below.</div>
     </div>`;
 }
 
