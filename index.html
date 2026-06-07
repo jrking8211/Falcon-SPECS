@@ -88,6 +88,15 @@
     .mat-input { width: 100%; min-width: 90px; background: var(--surface2); border: 1px solid var(--gold); border-radius: 5px; padding: 4px 6px; color: var(--text); outline: none; font-size: 0.82rem; }
     .mat-status.clickable { cursor: pointer; }
     .mat-status.clickable:hover { outline: 1px solid var(--gold); }
+    /* Materials grouped-by-phase sections */
+    .mat-phase { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+    .mat-phase > summary { list-style: none; cursor: pointer; padding: 9px 13px; background: var(--surface2); display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 700; font-size: 0.85rem; }
+    .mat-phase > summary::-webkit-details-marker { display: none; }
+    .mat-phase > summary::before { content: '▾'; margin-right: 7px; color: var(--text-muted); font-size: 0.8em; }
+    .mat-phase:not([open]) > summary::before { content: '▸'; }
+    .mat-phase .sub-amt { font-weight: 600; font-size: 0.74rem; color: var(--text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .mat-phase .table-wrap { padding: 0 4px 4px; }
+    .frombid { font-size: 0.6rem; color: var(--gold); font-weight: 700; white-space: nowrap; }
     .mini-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; padding: 3px 7px; color: var(--text); cursor: pointer; font-size: 0.78rem; }
     .mini-btn:hover { border-color: var(--gold); }
     .mini-btn.danger:hover { border-color: var(--red); color: var(--red); }
@@ -2170,6 +2179,22 @@ function renderLoanCard(info, project) {
   </div>`;
 }
 
+// Phase a material line belongs to (selections grouped separately).
+function materialPhase(i) {
+  if (i.selection) return 'Selections';
+  return categorizePhase(i.vendor, i.item) || 'Permits, Design & Soft Costs';
+}
+// Find the bid that should drive a material line's estimate: same project + phase,
+// vendor token overlap. Picks the largest matching bid if several.
+function bidForMaterial(project, item, phase) {
+  const toks = vendorTokens(item.vendor);
+  if (!toks.length) return null;
+  const cands = getBids().filter(b => b.project === project && b.phase === phase && b.status !== 'discarded')
+    .filter(b => { const bt = vendorTokens(b.vendor); return bt.length && toks.some(t => bt.includes(t)); });
+  if (!cands.length) return null;
+  return cands.sort((a, b) => Number(b.amount) - Number(a.amount))[0];
+}
+
 function renderMaterials(project) {
   const el = document.getElementById('materials-' + project);
   if (!el) return;
@@ -2182,26 +2207,40 @@ function renderMaterials(project) {
   const order = { 'not-ordered':0, 'bid-in':1, 'ordered':2, 'on-site':3, 'installed':4 };
   const counts = {};
   items.forEach(i => counts[i.status] = (counts[i.status]||0)+1);
-  const committed = items.reduce((s,i) => s + (i.cost||0), 0);
   const lbl = s => (s||'').replace('-',' ');
   const glTotals = glVendorTotals(project);
   const glLines = glVendorLines(project);
   const rowQB = computeRowQB(items, glTotals, glLines);
+  const ov = S.get('materials_' + project, {});
 
-  // Stable order while editing; status/date sort in view mode.
-  const rows = editMode ? items
-    : items.slice().sort((a,b) => order[a.status]-order[b.status] || new Date(a.neededBy||0)-new Date(b.neededBy||0));
-
-  const body = rows.map(i => {
+  // Enrich each item: phase + estimate. Estimate precedence: hand-edited cost
+  // override > matching bid > base cost. Tagged "from bid" when the bid drives it.
+  const enriched = items.map(i => {
+    const phase = materialPhase(i);
+    const bid = i.selection ? null : bidForMaterial(project, i, phase);
+    const manual = (ov[i._i] && ov[i._i].cost !== undefined) ? Number(ov[i._i].cost) : null;
+    const fromBid = !!bid;   // a matched bid is the source of truth for the estimate
+    const est = bid ? Number(bid.amount) : (manual !== null ? manual : (i.cost || 0));
     const q = rowQB[i._i] || { mode: 'none' };
+    const qbVal = (q.value != null && q.mode !== 'none' && q.mode !== 'dup') ? q.value : 0;
+    return { i, phase, bid, est, fromBid, q, qbVal };
+  });
+  const committed = enriched.reduce((s, e) => s + (e.est || 0), 0);
+
+  const matRow = e => {
+    const { i, q, est, fromBid } = e;
     let actualCell;
-    if (q.mode === 'none' || q.value === null && q.mode !== 'dup') actualCell = '<span style="color:var(--text-muted);">—</span>';
+    if (q.mode === 'none' || (q.value === null && q.mode !== 'dup')) actualCell = '<span style="color:var(--text-muted);">—</span>';
     else if (q.mode === 'dup') actualCell = '<span style="color:var(--text-muted);font-size:0.7rem;">↑ vendor total</span>';
     else actualCell = `<span style="color:var(--blue);font-variant-numeric:tabular-nums;">${fmt(q.value)}</span>${q.mode==='split'?'<span style="color:var(--text-muted);font-size:0.62rem;display:block;">split by description</span>':''}`;
 
     const itemCell   = editMode ? `<input class="mat-input" value="${esc(i.item)}" onchange="saveMaterialField('${project}',${i._i},'item',this.value)">` : i.item;
     const vendorCell = editMode ? `<input class="mat-input" value="${esc(i.vendor||'')}" onchange="saveMaterialField('${project}',${i._i},'vendor',this.value)">` : `<span style="color:var(--text-muted);font-size:0.8rem;">${i.vendor}</span>`;
-    const costCell   = editMode ? `<input type="number" class="alloc-input" value="${i.cost||0}" onchange="saveMaterialField('${project}',${i._i},'cost',this.value)">` : (i.cost?fmt(i.cost):'—');
+    const costCell   = fromBid
+      ? `${fmt(est)} <span class="frombid" title="From a matched bid — edit it on the Bids card">📋 bid</span>`
+      : (editMode
+        ? `<input type="number" class="alloc-input" value="${i.cost||0}" onchange="saveMaterialField('${project}',${i._i},'cost',this.value)">`
+        : (est ? fmt(est) : '—'));
     const statusCell = `<span class="mat-status ms-${i.status}${editMode?' clickable':''}"${editMode?` onclick="cycleMaterialStatus('${project}',${i._i})" title="Click to cycle status"`:''}>${lbl(i.status)}</span>`;
     const neededCell = editMode ? `<input class="mat-input" value="${esc(i.neededBy||'')}" onchange="saveMaterialField('${project}',${i._i},'neededBy',this.value)" placeholder="YYYY-MM-DD">` : `<span style="color:var(--text-muted);font-size:0.8rem;white-space:nowrap;">${i.neededBy||'—'}</span>`;
 
@@ -2213,92 +2252,61 @@ function renderMaterials(project) {
       <td>${statusCell}</td>
       <td>${neededCell}</td>
     </tr>`;
+  };
+
+  // Group by phase, in PHASE_ORDER, then Selections.
+  const groups = {};
+  enriched.forEach(e => (groups[e.phase] = groups[e.phase] || []).push(e));
+  const orderedPhases = [...PHASE_ORDER, 'Selections'].filter(p => groups[p]);
+
+  const phaseHtml = orderedPhases.map(phase => {
+    const list = groups[phase];
+    const sorted = editMode ? list : list.slice().sort((a, b) => order[a.i.status]-order[b.i.status] || new Date(a.i.neededBy||0)-new Date(b.i.neededBy||0));
+    const estSum = list.reduce((s, e) => s + (e.est || 0), 0);
+    const actSum = list.reduce((s, e) => s + e.qbVal, 0);
+    return `<details open class="mat-phase">
+      <summary><span>${phase} <span style="color:var(--text-muted);font-weight:400;">· ${list.length}</span></span>
+        <span class="sub-amt">Est ${fmt(estSum)}${actSum ? ' · QB ' + fmt(Math.round(actSum)) : ''}</span></summary>
+      <div class="table-wrap"><table class="budget-line-table">
+        <thead><tr><th>Item</th><th>Vendor</th><th style="text-align:right;">Est Cost</th><th style="text-align:right;">QB Actual</th><th>Status</th><th>Needed By</th></tr></thead>
+        <tbody>${sorted.map(matRow).join('')}</tbody>
+      </table></div>
+    </details>`;
   }).join('');
 
-  // Vendor roll-up: materials estimate vs QB actual vs variance.
-  // Group material rows by the GL vendor they match, so several rows feeding one
-  // QB vendor (e.g. interior + exterior paint → Universal Painting) collapse to a
-  // single line — the QB actual is the vendor total, counted once.
-  const groups = {};
-  items.forEach(i => {
-    if (i.selection) return; // color selections etc. are not vendors — keep out of the roll-up
-    const m = qbActualForVendor(i.vendor, glTotals);
-    if (m) {
-      const keys = m.keys.slice().sort();
-      const gk = 'qb:' + keys.join('|');
-      const g = groups[gk] = groups[gk] || { est: 0, keys, actual: m.total, members: [], glName: keys.map(k => glTotals[k]?.name || k).join(', ') };
-      g.est += i.cost || 0; g.members.push((i.vendor || '').trim());
-    } else {
-      const gk = 'raw:' + (normVendor(i.vendor) || '—');
-      const g = groups[gk] = groups[gk] || { est: 0, keys: [], actual: null, members: [], glName: i.vendor || '—' };
-      g.est += i.cost || 0;
-    }
-  });
+  // Labor & other QB vendors not tied to any material line (collapsed).
   const matchedKeys = new Set();
-  const rollupRows = Object.values(groups).map(g => {
-    g.keys.forEach(k => matchedKeys.add(k));
-    let name = g.glName;
-    const named = g.members.filter(Boolean);
-    if (g.keys.length && named.length) { // label with the material-vendor name (cleaner than raw GL payees)
-      const glToks = new Set(vendorTokens(g.glName));
-      name = named
-        .map(s => ({ s, ov: vendorTokens(s).filter(t => glToks.has(t)).length }))
-        .sort((a, b) => b.ov - a.ov || a.s.length - b.s.length)[0].s;
-    }
-    const actual = g.actual !== null ? Math.round(g.actual * 100) / 100 : null;
-    const variance = actual !== null ? Math.round((actual - g.est) * 100) / 100 : null;
-    return { name, est: g.est, actual, variance };
-  }).sort((a,b) => (b.actual||0) - (a.actual||0) || b.est - a.est);
-  // Named QB vendors not tied to a material line (labor subs, lot, soft costs).
+  items.forEach(i => { if (i.selection) return; const m = qbActualForVendor(i.vendor, glTotals); if (m) m.keys.forEach(k => matchedKeys.add(k)); });
   const otherVendors = Object.entries(glTotals)
     .filter(([k]) => !matchedKeys.has(k))
     .map(([, v]) => ({ name: v.name, total: Math.round(v.total * 100) / 100 }))
     .filter(v => Math.abs(v.total) >= 1)
     .sort((a, b) => b.total - a.total);
-
-  const rollup = `
-    <div style="margin-top:18px;">
-      <div style="font-weight:700;color:var(--gold);font-size:0.82rem;margin-bottom:8px;">Vendor Spend — Materials Estimate vs QB Actual</div>
-      <div class="table-wrap"><table class="budget-line-table">
-        <thead><tr><th>Vendor</th><th style="text-align:right;">Est (materials)</th><th style="text-align:right;">QB Actual</th><th style="text-align:right;">Variance</th></tr></thead>
-        <tbody>${rollupRows.map(r => `<tr>
-          <td>${r.name}</td>
-          <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-muted);">${r.est?fmt(r.est):'—'}</td>
-          <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--blue);">${r.actual===null?'—':fmt(r.actual)}</td>
-          <td style="text-align:right;font-variant-numeric:tabular-nums;color:${r.variance===null?'var(--text-muted)':r.variance>0?'var(--red)':'var(--green)'};">${r.variance===null?'—':(r.variance>0?'+':'')+fmt(r.variance)}</td>
-        </tr>`).join('')}</tbody>
-      </table></div>
-    </div>
-    ${otherVendors.length ? `
-    <div style="margin-top:16px;">
-      <div style="font-weight:700;color:var(--gold);font-size:0.82rem;margin-bottom:8px;">Labor &amp; Other Vendors — QB Actual</div>
+  const otherBlock = otherVendors.length ? `
+    <details class="mat-phase" style="margin-top:6px;">
+      <summary><span>Labor &amp; other QB vendors <span style="color:var(--text-muted);font-weight:400;">· not tied to materials</span></span>
+        <span class="sub-amt">QB ${fmt(Math.round(otherVendors.reduce((s,v)=>s+v.total,0)))}</span></summary>
       <div class="table-wrap"><table class="budget-line-table">
         <thead><tr><th>Vendor</th><th style="text-align:right;">QB Actual</th></tr></thead>
-        <tbody>${otherVendors.map(v => `<tr>
-          <td>${v.name}</td>
-          <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--blue);">${fmt(v.total)}</td>
-        </tr>`).join('')}</tbody>
+        <tbody>${otherVendors.map(v => `<tr><td>${v.name}</td><td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--blue);">${fmt(v.total)}</td></tr>`).join('')}</tbody>
       </table></div>
-    </div>` : ''}
-    <div style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;font-style:italic;">QB Actual matched to vendors by name. Labor-only subs &amp; non-material spend (lot, soft costs) appear in the second table. Edit a material vendor name to fix a mismatch.</div>`;
+    </details>` : '';
 
   el.innerHTML = `
     <div class="card">
       <div class="section-header">
         <div class="card-title">Materials Status — ${items.length} Items</div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <span class="badge badge-gold">${fmt(committed)} committed</span>
+          <span class="badge badge-gold">${fmt(committed)} est</span>
           ${editBtn}
         </div>
       </div>
       <div class="status-legend">
         ${['installed','on-site','ordered','bid-in','not-ordered'].map(s => `<span><span class="mat-status ms-${s}">${lbl(s)}</span> ${counts[s]||0}</span>`).join('')}
       </div>
-      <div class="table-wrap"><table class="budget-line-table">
-        <thead><tr><th>Item</th><th>Vendor</th><th style="text-align:right;">Est Cost</th><th style="text-align:right;">QB Actual</th><th>Status</th><th>Needed By</th></tr></thead>
-        <tbody>${body}</tbody>
-      </table></div>
-      ${rollup}
+      ${phaseHtml}
+      ${otherBlock}
+      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Grouped by construction phase. Estimates marked <span class="frombid">📋 bid</span> come from a matched bid (edit a line's cost to override). QB Actual matched to vendors by name; labor-only &amp; non-material spend is in the last group.</div>
     </div>`;
 }
 
