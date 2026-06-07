@@ -534,7 +534,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','market_data','listing_stats'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','market_data','listing_stats','permits'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -656,6 +656,7 @@ function handleFirestoreUpdate(key) {
   else if (key === 'loan_326')        renderLoan('326');
   else if (key === 'market_data')     { renderProjectDetail('330'); renderProjectDetail('326'); }
   else if (key === 'listing_stats')   { renderProjectDetail('330'); renderProjectDetail('326'); }
+  else if (key === 'permits')         { renderProjectDetail('330'); renderProjectDetail('326'); }
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
 }
@@ -1577,6 +1578,28 @@ function setListingViews(project) {
   });
 }
 
+// ─── BUILDING PERMIT NUMBER ──────────────────────────────────
+// User-entered per project, synced across devices via the 'permits' doc.
+function getPermit(project) {
+  const s = S.get('permits', {}) || {};
+  const v = s[project];
+  return (v && v.number) ? v.number : null;
+}
+function setPermit(project) {
+  requireAdminThen(() => {
+    const cur = getPermit(project);
+    const raw = prompt('Building permit number for ' + project + ' Roddy Branch:', cur || '');
+    if (raw === null) return;
+    const num = String(raw).trim();
+    const s = S.get('permits', {}) || {};
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (num === '') { delete s[project]; }       // clearing it removes the badge
+    else { s[project] = { number: num, updated: stamp }; }
+    S.set('permits', s);
+    renderProjectDetail(project);
+  });
+}
+
 // ─── PROJECT DETAIL (specs, budget breakdown, comps) ──────────
 function renderProjectDetail(project) {
   const container = document.getElementById('projdetail-' + project);
@@ -1611,7 +1634,13 @@ function renderProjectDetail(project) {
     <div class="card">
       <div class="section-header">
         <div class="card-title">Plan Specs — ${p.plan}</div>
-        <span style="font-size:0.72rem;color:var(--text-muted);">${p.address}</span>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          ${(() => {
+            const perm = getPermit(project);
+            return `<span onclick="setPermit('${project}')" title="${perm ? 'Building permit — click to update' : 'Click to set the building permit number'}" style="font-size:0.72rem;background:var(--surface2);color:${perm ? 'var(--gold)' : 'var(--text-muted)'};padding:3px 9px;border-radius:4px;font-weight:700;cursor:pointer;border:1px solid var(--border);">📋 ${perm ? 'Permit #' + perm : '+ permit #'}</span>`;
+          })()}
+          <span style="font-size:0.72rem;color:var(--text-muted);">${p.address}</span>
+        </div>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
         ${p.targetCompletion ? `<div style="flex:1;min-width:180px;background:var(--surface2);border-radius:8px;padding:10px 14px;"><div class="s-lbl">🎯 Target Completion</div><div style="font-weight:700;color:var(--gold);margin-top:2px;">${p.targetCompletion}</div></div>` : ''}
