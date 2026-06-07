@@ -541,7 +541,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','market_data','listing_stats','permits'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -660,7 +660,7 @@ function handleFirestoreUpdate(key) {
   else if (key === 'materials_326')   renderMaterials('326');
   else if (key === 'finishes_330')    renderFinishes('330');
   else if (key === 'finishes_326')    renderFinishes('326');
-  else if (key === 'loan_326')        renderLoan('326');
+  else if (key === 'loan_326' || key === 'loan_326_investor') renderLoan('326');
   else if (key === 'market_data')     { renderProjectDetail('330'); renderProjectDetail('326'); }
   else if (key === 'listing_stats')   { renderProjectDetail('330'); renderProjectDetail('326'); }
   else if (key === 'permits')         { renderProjectDetail('330'); renderProjectDetail('326'); }
@@ -1939,44 +1939,124 @@ function computeRowQB(items, glTotals, glLines) {
 // Outstanding balance (amount drawn) auto-syncs nightly from QuickBooks
 // (Make.com → dashboard/loan_326 {balance,lastSync}); interest-only.
 const LOAN_INFO = {
-  '326': {
-    lender: 'Pinnacle Bank',
-    borrower: 'JKING Enterprises LLC d/b/a Falcon Enterprises LLC',
-    commitment: 532000,
-    rateBasis: 'Prime + 0.50%',  // floating; effective = primeRate + rateMargin
-    primeRate: 7.50,             // WSJ Prime (update when prime changes)
-    rateMargin: 0.50,
-    maturity: '2028-02-18',      // 2-year term from 2026-02-18 closing
-    interestType: 'interest-only',
-    settled: '2026-02-18',
-    collateral: '326 Roddy Branch Rd',
-    closingCosts: 5712,
-    closingBreakdown: [
-      ['Loan origination fee (0.50%)', 2660],
-      ['Appraisal fee', 410],
-      ['Flood certification', 7.50],
-      ['Title services — Admiral Title', 1100],
-      ['Attorney / Deed of Trust — Adams Law', 300],
-      ['Lender title insurance — Westcor', 542],
-      ['Recording + state tax/stamps', 692.50],
-    ],
-  },
+  // 326 has two financing sources; drawn in this order to minimize interest:
+  // 1) family investor loan (5% simple), then 2) Pinnacle Bank construction line.
+  '326': [
+    {
+      id: 'investor',
+      lender: 'Private Investor Loan (Family)',
+      borrower: 'JKING Enterprises LLC d/b/a Falcon Enterprises LLC',
+      commitment: 105000,
+      rate: 5.0,                       // fixed
+      rateBasis: '5.00% fixed · simple interest',
+      interestType: 'simple-daily',    // daily accrual on outstanding balance
+      dayCount: 365,                   // Actual/365
+      payCadence: 'monthly',           // interest paid at the end of each month
+      fsKey: 'loan_326_investor',      // QB-linked liability account register
+      editableBalance: true,           // allow manual balance entry until QB sync wired
+      openTerm: true,                  // no fixed maturity
+      maturity: null,
+      settled: null,
+      collateral: '326 Roddy Branch Rd',
+      note: 'Drawn before the Pinnacle Bank line to minimize interest. Interest paid at the end of each month; principal + any remaining accrued interest repaid at 326 closing.',
+      closingCosts: 0,
+      closingBreakdown: [],
+    },
+    {
+      id: 'pinnacle',
+      lender: 'Pinnacle Bank',
+      borrower: 'JKING Enterprises LLC d/b/a Falcon Enterprises LLC',
+      commitment: 532000,
+      rateBasis: 'Prime + 0.50%',  // floating; effective = primeRate + rateMargin
+      primeRate: 7.50,             // WSJ Prime (update when prime changes)
+      rateMargin: 0.50,
+      maturity: '2028-02-18',      // 2-year term from 2026-02-18 closing
+      interestType: 'interest-only',
+      settled: '2026-02-18',
+      collateral: '326 Roddy Branch Rd',
+      closingCosts: 5712,
+      closingBreakdown: [
+        ['Loan origination fee (0.50%)', 2660],
+        ['Appraisal fee', 410],
+        ['Flood certification', 7.50],
+        ['Title services — Admiral Title', 1100],
+        ['Attorney / Deed of Trust — Adams Law', 300],
+        ['Lender title insurance — Westcor', 542],
+        ['Recording + state tax/stamps', 692.50],
+      ],
+    },
+  ],
 };
+
+// Normalize a QBO date ('YYYY-MM-DD' or 'MM/DD/YYYY') to 'YYYY-MM-DD' for compare.
+function normDateStr(s) {
+  if (!s) return '';
+  s = String(s);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return `${m[3]}-${String(m[1]).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}`;
+  return s;
+}
+
+// Simple daily-interest accrual for the current calendar month. Walks each day
+// 1st→today, accruing balance×dailyRate. Uses the dated register for exact
+// average-daily-balance accrual; falls back to current balance if no register.
+function simpleDailyStats(loanDoc, balance, rate, dayCount) {
+  const dailyRate = (rate / 100) / (dayCount || 365);
+  const dailyInterest = balance * dailyRate;
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const daysElapsed = now.getDate();           // through today, inclusive
+  const monthLabel = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  let mtd;
+  const rows = parseGLRows(loanDoc);
+  if (rows && rows.length) {
+    const ev = rows.map(r => ({ d: normDateStr(r.date), a: Number(r.amount) || 0 })).filter(r => r.d);
+    mtd = 0;
+    for (let day = 1; day <= daysElapsed; day++) {
+      const ds = `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const bal = Math.abs(ev.filter(e => e.d <= ds).reduce((s, e) => s + e.a, 0));
+      mtd += bal * dailyRate;
+    }
+  } else {
+    mtd = dailyInterest * daysElapsed;          // approximate w/ current balance
+  }
+  const projected = mtd + dailyInterest * (daysInMonth - daysElapsed);
+  return { dailyRate, dailyInterest, mtd, projected, daysElapsed, daysInMonth, monthLabel };
+}
+
+// Manual outstanding-balance entry for the investor loan (usable before the
+// QB-linked sync is wired; QB sync overwrites it once connected).
+function setInvestorBalance(project) {
+  requireAdminThen(() => {
+    const cur = (() => { const l = S.get('loan_' + project + '_investor', null); return (l && l.balance != null) ? l.balance : ''; })();
+    const raw = prompt('Outstanding principal advanced by the investor (drawn to date):', cur);
+    if (raw === null) return;
+    const n = parseFloat(String(raw).replace(/[^0-9.]/g, ''));
+    if (isNaN(n)) { alert('Please enter a number.'); return; }
+    S.set('loan_' + project + '_investor', { balance: n, lastSync: new Date().toISOString().slice(0, 10), manual: true });
+    renderLoan(project);
+  });
+}
 
 function renderLoan(project) {
   const el = document.getElementById('loan-' + project);
   if (!el) return;
-  const info = LOAN_INFO[project];
-  if (!info) { el.innerHTML = ''; return; }  // cash-financed projects show nothing
+  let loans = LOAN_INFO[project];
+  if (!loans) { el.innerHTML = ''; return; }   // cash-financed projects show nothing
+  if (!Array.isArray(loans)) loans = [loans];
+  el.innerHTML = loans.map(info => renderLoanCard(info, project)).join('');
+}
 
-  const loan = S.get('loan_' + project, null);
+function renderLoanCard(info, project) {
+  const loan = S.get(info.fsKey || ('loan_' + project), null);
   // Outstanding balance = sum of the loan-account GL register (reliable; QB's
   // cached CurrentBalance lags). Accepts either a register doc (reportJson) or
-  // a plain {balance} number, whichever Make.com writes.
+  // a plain {balance} number, whichever Make.com (or manual entry) writes.
   let drawn = null;
   if (loan) {
     if (loan.reportJson || loan.rows || loan.rowsJson || loan.Rows) {
-      // A synced register (even an empty one) means drawn = 0, not "unknown".
       const rows = parseGLRows(loan) || [];
       drawn = Math.abs(Math.round(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0) * 100) / 100);
     } else if (loan.balance != null && loan.balance !== '') {
@@ -1986,55 +2066,85 @@ function renderLoan(project) {
   const hasDrawn = drawn != null && !isNaN(drawn);
   const available = hasDrawn ? Math.max(0, info.commitment - drawn) : null;
   const pct = hasDrawn ? Math.min(100, Math.round((drawn / info.commitment) * 1000) / 10) : 0;
-  // Effective rate: explicit info.rate, else floating primeRate + rateMargin.
   const rate = info.rate != null ? info.rate
     : (info.primeRate != null && info.rateMargin != null ? info.primeRate + info.rateMargin : null);
-  const moInterest = (hasDrawn && rate) ? drawn * (rate / 100) / 12 : null;
-  const stat = (lbl, val, color) => `<div style="flex:1;min-width:150px;background:var(--surface2);border-radius:8px;padding:10px 14px;">
-    <div class="s-lbl">${lbl}</div><div style="font-weight:700;font-size:1.05rem;margin-top:2px;${color?`color:${color};`:''}">${val}</div></div>`;
+  const isSimple = info.interestType === 'simple-daily';
+  const title = isSimple ? info.lender : ('Construction Loan — ' + info.lender);
+
+  const stat = (lbl, val, color, onclick) => `<div style="flex:1;min-width:150px;background:var(--surface2);border-radius:8px;padding:10px 14px;${onclick ? 'cursor:pointer;' : ''}"${onclick ? ` onclick="${onclick}" title="Click to set"` : ''}>
+    <div class="s-lbl">${lbl}</div><div style="font-weight:700;font-size:1.05rem;margin-top:2px;${color ? `color:${color};` : ''}">${val}</div></div>`;
 
   const rateTxt = rate != null
-    ? (info.rateBasis ? `${info.rateBasis}<br><span style="font-size:0.78rem;color:var(--text-muted);">${rate.toFixed(2)}% now</span>` : rate.toFixed(2) + '%')
+    ? (info.rateBasis ? `${info.rateBasis}${(!isSimple && info.primeRate != null) ? `<br><span style="font-size:0.78rem;color:var(--text-muted);">${rate.toFixed(2)}% now</span>` : (isSimple ? `<br><span style="font-size:0.72rem;color:var(--text-muted);">Actual/365 · ~${fmt(Math.round(info.commitment * (rate / 100) / 365 * 100) / 100)}/day at full</span>` : '')}` : rate.toFixed(2) + '%')
     : '<span style="color:var(--gold);">set rate ⚠️</span>';
-  const drawnTxt = hasDrawn ? fmt(drawn) : '<span style="color:var(--text-muted);">awaiting QB sync</span>';
+  const drawnClick = (info.editableBalance) ? `setInvestorBalance('${project}')` : '';
+  const drawnTxt = hasDrawn ? fmt(drawn) + (loan?.manual ? ' <span style="font-size:0.6rem;color:var(--text-muted);">✎ manual</span>' : '')
+    : `<span style="color:var(--text-muted);">${info.editableBalance ? '✎ set balance' : 'awaiting QB sync'}</span>`;
   const availTxt = hasDrawn ? fmt(available) : '—';
-  const moTxt = moInterest != null ? fmt(Math.round(moInterest)) + '/mo'
-    : (rate == null ? 'set rate' : (hasDrawn ? '—' : '$0 / mo (no draws)'));
 
-  const breakdown = info.closingBreakdown.map(([l, v]) =>
-    `<tr><td>${l}</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${fmt(v)}</td></tr>`).join('');
+  // Interest readout differs by type
+  let interestStats = '';
+  let payCallout = '';
+  if (isSimple) {
+    const s = simpleDailyStats(loan, hasDrawn ? drawn : 0, rate, info.dayCount);
+    interestStats = stat('📅 Interest/Day', hasDrawn ? fmt(Math.round(s.dailyInterest * 100) / 100) + '/day' : '$0/day', 'var(--text-muted)')
+      + stat('📆 Accrued This Month', hasDrawn ? fmt(Math.round(s.mtd * 100) / 100) : '$0.00', 'var(--text-muted)');
+    payCallout = `
+      <div style="background:linear-gradient(90deg,rgba(93,179,228,0.12),transparent);border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:0 8px 8px 0;padding:12px 14px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.03em;">💵 Pay investor at end of ${s.monthLabel}</div>
+          <div style="font-weight:800;font-size:1.45rem;color:var(--gold);margin-top:2px;">${fmt(Math.round(s.projected * 100) / 100)}</div>
+        </div>
+        <div style="text-align:right;font-size:0.72rem;color:var(--text-muted);line-height:1.5;">
+          Accrued through today: <strong style="color:var(--text);">${fmt(Math.round(s.mtd * 100) / 100)}</strong><br>
+          + ${s.daysInMonth - s.daysElapsed} more day${s.daysInMonth - s.daysElapsed === 1 ? '' : 's'} at ${fmt(Math.round(s.dailyInterest * 100) / 100)}/day
+        </div>
+      </div>`;
+  } else {
+    const moInterest = (hasDrawn && rate) ? drawn * (rate / 100) / 12 : null;
+    const moTxt = moInterest != null ? fmt(Math.round(moInterest)) + '/mo'
+      : (rate == null ? 'set rate' : (hasDrawn ? '—' : '$0 / mo (no draws)'));
+    interestStats = stat('🗓️ Est. Interest', moTxt, 'var(--text-muted)');
+  }
 
-  el.innerHTML = `
+  const closing = (info.closingBreakdown && info.closingBreakdown.length) ? `
+    <div style="font-weight:700;color:var(--gold);font-size:0.82rem;margin-bottom:8px;">Loan Closing Costs — ${fmt(info.closingCosts)} <span style="color:var(--text-muted);font-weight:400;">(in Loan / Financing phase)</span></div>
+    <div class="table-wrap"><table class="budget-line-table">
+      <thead><tr><th>Item</th><th style="text-align:right;">Amount</th></tr></thead>
+      <tbody>${info.closingBreakdown.map(([l, v]) => `<tr><td>${l}</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${fmt(v)}</td></tr>`).join('')}
+        <tr style="font-weight:700;border-top:2px solid var(--border);"><td>Total cash to close</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${fmt(info.closingCosts)}</td></tr>
+      </tbody>
+    </table></div>` : '';
+
+  const termTxt = info.openTerm ? 'Open term — repaid at 326 closing'
+    : (info.maturity ? 'Matures ' + info.maturity : '');
+  const footer = isSimple
+    ? `Borrower: ${info.borrower} · ${info.rateBasis}, Actual/365 daily on drawn balance · interest paid monthly · ${termTxt}. ${info.note || ''}`
+    : `Borrower: ${info.borrower}${info.settled ? ' · Settled ' + info.settled : ''} · ${info.interestType === 'interest-only' ? 'Interest-only on drawn balance' : info.interestType}${info.maturity ? ' · Matures ' + info.maturity : ''}. 330 Roddy Branch is Falcon cash — no loan.`;
+
+  return `
   <div class="card">
     <div class="section-header">
-      <div class="card-title">Construction Loan — ${info.lender}</div>
+      <div class="card-title">${title}</div>
       <div style="display:flex;gap:8px;align-items:center;">
-        <span class="badge badge-gold">${fmt(info.commitment)} commitment</span>
-        ${loan?.lastSync ? `<span class="badge badge-gray">QB ${loan.lastSync}</span>` : ''}
+        <span class="badge badge-gold">${fmt(info.commitment)}${isSimple ? '' : ' commitment'}</span>
+        ${loan?.lastSync ? `<span class="badge badge-gray">${loan.manual ? 'set' : 'QB'} ${loan.lastSync}</span>` : ''}
       </div>
     </div>
+    ${payCallout}
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
-      ${stat('💰 Commitment', fmt(info.commitment))}
-      ${stat('📉 Drawn (owed)', drawnTxt, 'var(--red)')}
-      ${stat('✅ Available to Draw', availTxt, 'var(--green)')}
+      ${stat('💰 ' + (isSimple ? 'Loan Amount' : 'Commitment'), fmt(info.commitment))}
+      ${stat('📉 Drawn (owed)', drawnTxt, 'var(--red)', drawnClick)}
+      ${stat('✅ Available', availTxt, 'var(--green)')}
       ${stat('📈 Rate', rateTxt)}
-      ${stat('🗓️ Est. Interest', moTxt, 'var(--text-muted)')}
+      ${interestStats}
     </div>
     <div style="background:var(--surface2);border-radius:999px;height:14px;overflow:hidden;margin-bottom:6px;">
       <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--gold),var(--red));border-radius:999px;"></div>
     </div>
-    <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:14px;">${hasDrawn ? `${pct}% of commitment drawn · ${fmt(available)} still available` : 'Outstanding balance auto-syncs nightly from QuickBooks once the loan-account sync is connected.'}</div>
-
-    <div style="font-weight:700;color:var(--gold);font-size:0.82rem;margin-bottom:8px;">Loan Closing Costs — ${fmt(info.closingCosts)} <span style="color:var(--text-muted);font-weight:400;">(in Loan / Financing phase)</span></div>
-    <div class="table-wrap"><table class="budget-line-table">
-      <thead><tr><th>Item</th><th style="text-align:right;">Amount</th></tr></thead>
-      <tbody>${breakdown}
-        <tr style="font-weight:700;border-top:2px solid var(--border);"><td>Total cash to close</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${fmt(info.closingCosts)}</td></tr>
-      </tbody>
-    </table></div>
-    <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">
-      Borrower: ${info.borrower} · Settled ${info.settled} · ${info.interestType === 'interest-only' ? 'Interest-only on drawn balance' : info.interestType}${info.maturity ? ' · Matures ' + info.maturity : ''}. 330 Roddy Branch is Falcon cash — no loan.
-    </div>
+    <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:14px;">${hasDrawn ? `${pct}% drawn · ${fmt(available)} still available` : (info.editableBalance ? 'Click “Drawn (owed)” to enter the current balance, or connect the QB-account sync for nightly auto-updates.' : 'Outstanding balance auto-syncs nightly from QuickBooks once the loan-account sync is connected.')}</div>
+    ${closing}
+    <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">${footer}</div>
   </div>`;
 }
 
