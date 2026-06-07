@@ -1638,59 +1638,7 @@ function renderProjectDetail(project) {
       <div class="features-list">${p.features.map(f => `<span class="feat-tag">${f}</span>`).join('')}</div>
     </div>
 
-    <div class="two-col">
-      <div class="card">
-        <div class="card-title">${p.projectedAllIn ? 'Pre-Construction Cost Estimate' : 'Projected Budget — Line by Line'}</div>
-        <div class="table-wrap">
-          <table class="budget-line-table">
-            <thead><tr><th>Category</th><th style="text-align:right;">Projected</th><th>Notes</th></tr></thead>
-            <tbody>
-              ${budgetEntries.map(([cat, v]) => `<tr>
-                <td>${cat}</td>
-                <td style="text-align:right;font-variant-numeric:tabular-nums;">${fmt(v.projected)}</td>
-                <td style="color:var(--text-muted);font-size:0.78rem;">${v.note}</td>
-              </tr>`).join('')}
-              ${p.projectedAllIn ? `<tr style="border-top:1px solid var(--border);">
-                <td style="color:var(--text-muted);">Original estimate subtotal</td>
-                <td style="text-align:right;color:var(--text-muted);font-variant-numeric:tabular-nums;">${fmt(totalBudgetLines)}</td>
-                <td style="color:var(--text-muted);font-size:0.78rem;">superseded by handoff projection</td>
-              </tr>
-              <tr>
-                <td style="font-weight:600;">Projected All-In — Handoff (${p.snapshotDate||'May 17'})</td>
-                <td style="text-align:right;font-weight:600;font-variant-numeric:tabular-nums;">${fmt(p.projectedAllIn)}</td>
-                <td style="color:var(--text-muted);font-size:0.78rem;">~$${Math.round(p.projectedAllIn/p.sqftTotal)}/sqft · authoritative</td>
-              </tr>` : ''}
-              <tr style="border-top:1px solid var(--border);">
-                <td style="color:var(--text-muted);">Real Estate Commission (${(commissionRate*100).toFixed(0)}%)</td>
-                <td style="text-align:right;color:var(--text-muted);font-variant-numeric:tabular-nums;">${fmt(commission)}</td>
-                <td style="color:var(--text-muted);font-size:0.78rem;">${(commissionRate*100).toFixed(0)}% of ${fmt(displaySale)} — note: handoff projection excludes this</td>
-              </tr>
-              <tr class="total-row">
-                <td>TOTAL PROJECTED COST</td>
-                <td style="text-align:right;">${fmt(totalProjected)}</td>
-                <td></td>
-              </tr>
-              ${p.spendToDate ? `<tr class="spent-row">
-                <td>Spend to Date — Handoff${p.transactionCount?` (${p.transactionCount} txns)`:''}</td>
-                <td style="text-align:right;">(${fmt(p.spendToDate)})</td>
-                <td style="color:var(--text-muted);font-size:0.78rem;">330's true share after lot re-split</td>
-              </tr>` : ''}
-              <tr class="spent-row">
-                <td>QB Inventory Asset (live)</td>
-                <td style="text-align:right;">(${fmt(qbSpent)})</td>
-                <td style="color:var(--text-muted);font-size:0.78rem;">${p.spendToDate && Math.abs(qbSpent - p.spendToDate) > 1000 ? '⚠ includes un-split joint lot — see reconciliation' : 'Inventory Asset balance'}</td>
-              </tr>
-              <tr class="remain-row">
-                <td>Remaining to Spend</td>
-                <td style="text-align:right;color:${remaining>=0?'var(--green)':'var(--red)'};">${remaining>=0?fmt(remaining):'OVER '+fmt(Math.abs(remaining))}</td>
-                <td style="color:var(--text-muted);font-size:0.78rem;">vs live QB balance</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
+    <div class="card">
         <div class="card-title">Comparable Sales &amp; Pricing</div>
         <div class="comp-box">
           <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;">
@@ -1726,8 +1674,7 @@ function renderProjectDetail(project) {
           </div>
           <div style="margin-top:10px;font-size:0.75rem;color:var(--text-muted);font-style:italic;">${p.compNotes}</div>
         </div>
-      </div>
-    </div>`;
+      </div>`;
 }
 
 // ─── PHASE BUDGET (spent vs budget) ───────────────────────────
