@@ -1087,8 +1087,7 @@ const MATERIALS = {
     { item: 'Interior paint colors (SW)', vendor: 'Greek Villa + Extra White', cost: 0, status: 'installed', neededBy: '2026-06-05', selection: true },
     { item: 'Exterior paint colors (SW)', vendor: 'Poolhouse / In the Navy / Accessible Beige / Extra White', cost: 0, status: 'installed', neededBy: '2026-06-20', selection: true },
     { item: 'Exterior paint + labor (siding + trim)', vendor: 'Painter (confirm if Universal)', cost: 8800, status: 'ordered', neededBy: '2026-07-15' },
-    { item: 'Kitchen cabinets', vendor: 'Old City Kitchens', cost: 18305, status: 'ordered', neededBy: '2026-06-08' },
-    { item: 'Bath vanities', vendor: 'TBD', cost: 0, status: 'ordered', neededBy: '2026-06-15' },
+    { item: 'Cabinets', vendor: 'Old City Kitchens', cost: 18305, status: 'ordered', neededBy: '2026-06-08' }, // kitchen + bath vanities (one cabinet vendor)
     { item: 'Master bath floor tile (100 SF)', vendor: 'Cella Flooring & Design', cost: 2000, status: 'ordered', neededBy: '2026-06-15' },
     { item: 'Master shower tile (221 SF custom)', vendor: 'Cella Flooring & Design', cost: 10608, status: 'ordered', neededBy: '2026-06-15' },
     { item: 'Hall bath floor tile (35 SF)', vendor: 'Cella Flooring & Design', cost: 560, status: 'ordered', neededBy: '2026-06-15' },
@@ -2279,11 +2278,13 @@ function renderMaterials(project) {
   const actCell = (r) => r.actual ? `<span style="color:var(--blue);font-variant-numeric:tabular-nums;">${fmt(Math.round(r.actual))}</span>` : '<span style="color:var(--text-muted);">—</span>';
 
   const matRow = (r) => {
-    const scope = r.label || r.vendor;
-    const ven   = r.vendor && r.vendor !== scope ? `<span style="color:var(--text-muted);font-size:0.8rem;">${esc(r.vendor)}</span>` : '<span style="color:var(--text-muted);">—</span>';
+    // Vendor always lives in the Vendor column; Scope/Item shows the itemized
+    // scope when we have one (from a material line or bid trade), else a dash.
+    const scope = r.label ? esc(r.label) : '<span style="color:var(--text-muted);">—</span>';
+    const ven   = r.vendor ? `<span style="font-size:0.85rem;">${esc(r.vendor)}</span>` : '<span style="color:var(--text-muted);">—</span>';
     const need  = (editMode && r._i!==null) ? `<input class="mat-input" value="${esc(r.neededBy||'')}" onchange="saveMaterialField('${project}',${r._i},'neededBy',this.value)" placeholder="YYYY-MM-DD">` : `<span style="color:var(--text-muted);font-size:0.8rem;white-space:nowrap;">${r.neededBy||'—'}</span>`;
     return `<tr>
-      <td>${esc(scope)}</td>
+      <td>${scope}</td>
       <td>${ven}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;">${estCell(r)}</td>
       <td style="text-align:right;">${actCell(r)}</td>
@@ -2306,14 +2307,9 @@ function renderMaterials(project) {
     </details>`;
   }).join('');
 
-  const selHtml = selections.length ? `
-    <details open class="mat-phase">
-      <summary><span>Selections <span style="color:var(--text-muted);font-weight:400;">· ${selections.length}</span></span></summary>
-      <div class="table-wrap"><table class="budget-line-table">
-        <thead><tr><th>Item</th><th>Selection</th><th>Status</th></tr></thead>
-        <tbody>${selections.map(m => `<tr><td>${esc(m.item)}</td><td><span style="color:var(--text-muted);font-size:0.8rem;">${esc(m.vendor||'')}</span></td><td><span class="mat-status ms-${m.status}">${lbl(m.status)}</span></td></tr>`).join('')}</tbody>
-      </table></div>
-    </details>` : '';
+  // Note: color/finish selections are intentionally NOT shown here — they live in
+  // the "Color & Finish Selections" card directly below (selections[] is collected
+  // above only to keep those lines out of the phase spend rows).
 
   el.innerHTML = `
     <div class="card">
@@ -2329,8 +2325,7 @@ function renderMaterials(project) {
         ${['installed','on-site','ordered','bid-in','not-ordered'].map(s => `<span><span class="mat-status ms-${s}">${lbl(s)}</span> ${counts[s]||0}</span>`).join('')}
       </div>
       ${phaseHtml}
-      ${selHtml}
-      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Each phase auto-fills from actual QuickBooks spend, split line-by-line — a vendor working across phases (e.g. block labor vs. brick labor) appears under each. <span class="frombid">📋 bid</span> = estimate from a matched bid (edit on the Bids card). Needed-by &amp; status come from your material lines.</div>
+      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Each phase auto-fills from actual QuickBooks spend, split line-by-line — a vendor working across phases (e.g. block labor vs. brick labor) appears under each. <span class="frombid">📋 bid</span> = estimate from a matched bid (edit on the Bids card). Needed-by &amp; status come from your material lines; color &amp; finish selections are in the card below.</div>
     </div>`;
 }
 
