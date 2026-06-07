@@ -947,8 +947,8 @@ const VENDOR_PHASE = [
   ['tn crane','Framing & Exterior Shell'], ['reagan steel','Framing & Exterior Shell'],
   ['lansing','Framing & Exterior Shell'], ['duo-fast','Framing & Exterior Shell'],
   ['carlos baca','Framing & Exterior Shell'], ['baca','Framing & Exterior Shell'],
-  ['witt','Framing & Exterior Shell'], ['us brick','Framing & Exterior Shell'],
-  ['construction services','Framing & Exterior Shell'], ['robbins','Framing & Exterior Shell'],
+  ['witt','Framing & Exterior Shell'], ['us brick','Exterior Finishes'], // US Brick = finish brick veneer
+  ['construction services','Exterior Finishes'], ['robbins','Framing & Exterior Shell'], // Const. Svcs One = brick mason (block labor lines still route to Foundation by memo)
   ['phoenix electric','MEP Rough-in'], ['pheonix','MEP Rough-in'],
   ['finchum','MEP Rough-in'], ['priority plumb','MEP Rough-in'], ['taylor plumb','MEP Rough-in'],
   ['ferguson','MEP Rough-in'], ['noland','MEP Rough-in'],
@@ -968,8 +968,8 @@ function descPhase(t) {
   if (has('bank fee','loan fee','loan cost','origination','draw fee','financing','interest','lender','appraisal')) return 'Loan / Financing'; // construction-loan costs tracked independently
   if (has('lot closing','title fee','closing cost')) return 'Lot Acquired';
   if (has('footer','footing','foundation pour','cmu','block','rebar','excavat','grading','crawlspace','waterproof','sand','gravel')) return 'Foundation';
-  if (has('flatwork','driveway','sidewalk','slab','final grade','landscap','sod','seeding','retaining wall','garage door','exterior paint','ext paint','siding paint','paint exterior')) return 'Exterior Finishes';
-  if (has('framing','lumber','truss','roof','shingle','soffit','fascia','siding','gutter','exterior door','exterior trim','window','brick','stone install','masonry','decking')) return 'Framing & Exterior Shell';
+  if (has('flatwork','driveway','sidewalk','slab','final grade','landscap','sod','seeding','retaining wall','garage door','exterior paint','ext paint','siding paint','paint exterior','brick','mortar','brick veneer','brick labor','finish brick','weep','wall tie','lintel')) return 'Exterior Finishes'; // finish brick veneer = exterior finish (NOT structural block, which is caught above by cmu/block)
+  if (has('framing','lumber','truss','roof','shingle','soffit','fascia','siding','gutter','exterior door','exterior trim','window','stone install','decking')) return 'Framing & Exterior Shell';
   if (has('rough plumb','rough electric','electrical rough','rough-in','rough in','hvac','ductwork','duct ','mechanical')) return 'MEP Rough-in';
   if (has('drywall','sheetrock','gypsum','insulat')) return 'Drywall & Insulation';
   if (has('cabinet','countertop','tile','lvp','wood floor','carpet','flooring','interior paint','interior trim','interior door','stair part','vanity','backsplash','fixture','appliance','lighting','hardware','shelving','closet shelf','shelf','fireplace')) return 'Interior Finishes';
@@ -2179,125 +2179,138 @@ function renderLoanCard(info, project) {
   </div>`;
 }
 
-// Phase a material line belongs to (selections grouped separately).
-function materialPhase(i) {
-  if (i.selection) return 'Selections';
-  return categorizePhase(i.vendor, i.item) || 'Permits, Design & Soft Costs';
-}
-// Find the bid that should drive a material line's estimate: same project + phase,
-// vendor token overlap. Picks the largest matching bid if several.
-function bidForMaterial(project, item, phase) {
-  const toks = vendorTokens(item.vendor);
-  if (!toks.length) return null;
-  const cands = getBids().filter(b => b.project === project && b.phase === phase && b.status !== 'discarded')
-    .filter(b => { const bt = vendorTokens(b.vendor); return bt.length && toks.some(t => bt.includes(t)); });
-  if (!cands.length) return null;
-  return cands.sort((a, b) => Number(b.amount) - Number(a.amount))[0];
+// Match a vendor name to an existing row key: distinctive-token overlap first,
+// then full-phrase containment (handles all-generic names like "Construction Services One").
+function vendorKeyMatch(vendor, keys) {
+  const toks = vendorTokens(vendor);
+  if (toks.length) {
+    for (const k of keys) { const w = k.split(' '); if (toks.some(t => w.includes(t))) return k; }
+  }
+  const norm = normVendor(vendor);
+  if (norm.length >= 6) for (const k of keys) { if (k.includes(norm) || (k.length >= 6 && norm.includes(k))) return k; }
+  return null;
 }
 
+// Materials = a live, GL-driven picture of where money is landing by construction
+// phase. Each phase auto-fills from actual QuickBooks spend (line-by-line, so a
+// vendor who works across phases — e.g. block labor vs. brick labor — splits
+// correctly). Bids layer on as the estimate; manual material lines add scope
+// labels, status and needed-by dates and surface planned-but-unbilled items.
 function renderMaterials(project) {
   const el = document.getElementById('materials-' + project);
   if (!el) return;
   const editBtn = `<button id="mat-edit-${project}" class="edit-toggle${editMode?' on':''}" onclick="toggleEditMode('${project}')">${editMode?'✓ Done Editing':'✏️ Edit'}</button>`;
-  const items = getMaterials(project);
-  if (!items.length) {
-    el.innerHTML = `<div class="card"><div class="section-header"><div class="card-title">Materials Status</div>${editBtn}</div><div class="empty-state">Same template as 330 — material line items to be added for this project.</div></div>`;
-    return;
-  }
-  const order = { 'not-ordered':0, 'bid-in':1, 'ordered':2, 'on-site':3, 'installed':4 };
-  const counts = {};
-  items.forEach(i => counts[i.status] = (counts[i.status]||0)+1);
   const lbl = s => (s||'').replace('-',' ');
-  const glTotals = glVendorTotals(project);
-  const glLines = glVendorLines(project);
-  const rowQB = computeRowQB(items, glTotals, glLines);
-  const ov = S.get('materials_' + project, {});
 
-  // Enrich each item: phase + estimate. Estimate precedence: hand-edited cost
-  // override > matching bid > base cost. Tagged "from bid" when the bid drives it.
-  const enriched = items.map(i => {
-    const phase = materialPhase(i);
-    const bid = i.selection ? null : bidForMaterial(project, i, phase);
-    const manual = (ov[i._i] && ov[i._i].cost !== undefined) ? Number(ov[i._i].cost) : null;
-    const fromBid = !!bid;   // a matched bid is the source of truth for the estimate
-    const est = bid ? Number(bid.amount) : (manual !== null ? manual : (i.cost || 0));
-    const q = rowQB[i._i] || { mode: 'none' };
-    const qbVal = (q.value != null && q.mode !== 'none' && q.mode !== 'dup') ? q.value : 0;
-    return { i, phase, bid, est, fromBid, q, qbVal };
+  const manual  = getMaterials(project);
+  const glRows  = parseGLRows(S.get('gl_' + project, null)) || [];
+  const bids    = getBids().filter(b => b.project === project && b.status !== 'discarded');
+
+  // Phases shown here (lot / loan / sale are tracked on their own cards).
+  const SKIP = new Set(['Lot Acquired', 'Loan / Financing', 'Listing / Sale']);
+  const PHASES = PHASE_ORDER.filter(p => !SKIP.has(p));
+  const rows = {}; PHASES.forEach(p => rows[p] = {});
+  const blank = (vendor) => ({ vendor, label: '', est: 0, estSrc: '', actual: 0, status: '', neededBy: '', _i: null, _bidId: null });
+
+  // 1. GL actuals → seed a row per phase + vendor (this is the source of truth for "what landed where").
+  glRows.forEach(r => {
+    const ph = categorizePhase(r.payee, r.memo);
+    if (!rows[ph]) return;
+    const name = (r.payee || '').trim(); const key = normVendor(name);
+    if (!key) return;
+    (rows[ph][key] = rows[ph][key] || blank(name)).actual += Number(r.amount) || 0;
   });
-  const committed = enriched.reduce((s, e) => s + (e.est || 0), 0);
 
-  const matRow = e => {
-    const { i, q, est, fromBid } = e;
-    let actualCell;
-    if (q.mode === 'none' || (q.value === null && q.mode !== 'dup')) actualCell = '<span style="color:var(--text-muted);">—</span>';
-    else if (q.mode === 'dup') actualCell = '<span style="color:var(--text-muted);font-size:0.7rem;">↑ vendor total</span>';
-    else actualCell = `<span style="color:var(--blue);font-variant-numeric:tabular-nums;">${fmt(q.value)}</span>${q.mode==='split'?'<span style="color:var(--text-muted);font-size:0.62rem;display:block;">split by description</span>':''}`;
+  // 2. Bids → estimate overlay, matched into the bid's phase + vendor.
+  bids.forEach(b => {
+    if (!rows[b.phase]) return;
+    let key = vendorKeyMatch(b.vendor, Object.keys(rows[b.phase]));
+    if (!key) { key = normVendor(b.vendor) || ('bid' + b.id); rows[b.phase][key] = rows[b.phase][key] || blank(b.vendor); }
+    const row = rows[b.phase][key];
+    row.est = Number(b.amount) || 0; row.estSrc = 'bid'; row._bidId = b.id;
+    if (b.trade) row.label = row.label || b.trade;
+    if (!row.vendor) row.vendor = b.vendor;
+  });
 
-    const itemCell   = editMode ? `<input class="mat-input" value="${esc(i.item)}" onchange="saveMaterialField('${project}',${i._i},'item',this.value)">` : i.item;
-    const vendorCell = editMode ? `<input class="mat-input" value="${esc(i.vendor||'')}" onchange="saveMaterialField('${project}',${i._i},'vendor',this.value)">` : `<span style="color:var(--text-muted);font-size:0.8rem;">${i.vendor}</span>`;
-    const costCell   = fromBid
-      ? `${fmt(est)} <span class="frombid" title="From a matched bid — edit it on the Bids card">📋 bid</span>`
-      : (editMode
-        ? `<input type="number" class="alloc-input" value="${i.cost||0}" onchange="saveMaterialField('${project}',${i._i},'cost',this.value)">`
-        : (est ? fmt(est) : '—'));
-    const statusCell = `<span class="mat-status ms-${i.status}${editMode?' clickable':''}"${editMode?` onclick="cycleMaterialStatus('${project}',${i._i})" title="Click to cycle status"`:''}>${lbl(i.status)}</span>`;
-    const neededCell = editMode ? `<input class="mat-input" value="${esc(i.neededBy||'')}" onchange="saveMaterialField('${project}',${i._i},'neededBy',this.value)" placeholder="YYYY-MM-DD">` : `<span style="color:var(--text-muted);font-size:0.8rem;white-space:nowrap;">${i.neededBy||'—'}</span>`;
+  // 3. Manual lines → scope label, status, needed-by, and estimate when no bid.
+  const selections = [];
+  manual.forEach(m => {
+    if (m.selection) { selections.push(m); return; }
+    const ph = categorizePhase(m.vendor, m.item);
+    if (!rows[ph]) return;
+    let key = vendorKeyMatch(m.vendor, Object.keys(rows[ph]));
+    if (!key) { key = normVendor(m.vendor) || ('m' + m._i); rows[ph][key] = rows[ph][key] || blank(m.vendor); }
+    const row = rows[ph][key];
+    if (m.item) row.label = m.item;
+    if (m.status) row.status = m.status;
+    if (m.neededBy) row.neededBy = m.neededBy;
+    if (row._i === null) row._i = m._i;
+    if (!row.estSrc && (m.cost || 0) > 0 && !row.actual) { row.est = Number(m.cost); row.estSrc = 'manual'; } // manual estimate yields to real GL spend once invoiced
+  });
 
+  // ── totals + status counts ──
+  let totEst = 0, totAct = 0; const counts = {};
+  PHASES.forEach(p => Object.values(rows[p]).forEach(r => {
+    totEst += r.est || 0; totAct += r.actual || 0;
+    const s = r.status || (r.actual ? 'invoiced' : 'not-ordered'); counts[s] = (counts[s]||0)+1;
+  }));
+
+  const statusCell = (r) => {
+    if (r.status) return `<span class="mat-status ms-${r.status}${editMode && r._i!==null?' clickable':''}"${editMode && r._i!==null?` onclick="cycleMaterialStatus('${project}',${r._i})" title="Click to cycle"`:''}>${lbl(r.status)}</span>`;
+    if (r.actual) return '<span style="color:var(--blue);font-size:0.68rem;">invoiced</span>';
+    return '<span style="color:var(--text-muted);">—</span>';
+  };
+  const estCell = (r) => {
+    if (!r.est) return '<span style="color:var(--text-muted);">—</span>';
+    const tag = r.estSrc === 'bid' ? ' <span class="frombid" title="From a matched bid — edit on the Bids card">📋 bid</span>' : '';
+    return `${fmt(r.est)}${tag}`;
+  };
+  const actCell = (r) => r.actual ? `<span style="color:var(--blue);font-variant-numeric:tabular-nums;">${fmt(Math.round(r.actual))}</span>` : '<span style="color:var(--text-muted);">—</span>';
+
+  const matRow = (r) => {
+    const scope = r.label || r.vendor;
+    const ven   = r.vendor && r.vendor !== scope ? `<span style="color:var(--text-muted);font-size:0.8rem;">${esc(r.vendor)}</span>` : '<span style="color:var(--text-muted);">—</span>';
+    const need  = (editMode && r._i!==null) ? `<input class="mat-input" value="${esc(r.neededBy||'')}" onchange="saveMaterialField('${project}',${r._i},'neededBy',this.value)" placeholder="YYYY-MM-DD">` : `<span style="color:var(--text-muted);font-size:0.8rem;white-space:nowrap;">${r.neededBy||'—'}</span>`;
     return `<tr>
-      <td>${itemCell}</td>
-      <td>${vendorCell}</td>
-      <td style="text-align:right;font-variant-numeric:tabular-nums;">${costCell}</td>
-      <td style="text-align:right;">${actualCell}</td>
-      <td>${statusCell}</td>
-      <td>${neededCell}</td>
+      <td>${esc(scope)}</td>
+      <td>${ven}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${estCell(r)}</td>
+      <td style="text-align:right;">${actCell(r)}</td>
+      <td>${statusCell(r)}</td>
+      <td>${need}</td>
     </tr>`;
   };
 
-  // Group by phase, in PHASE_ORDER, then Selections.
-  const groups = {};
-  enriched.forEach(e => (groups[e.phase] = groups[e.phase] || []).push(e));
-  const orderedPhases = [...PHASE_ORDER, 'Selections'].filter(p => groups[p]);
-
-  const phaseHtml = orderedPhases.map(phase => {
-    const list = groups[phase];
-    const sorted = editMode ? list : list.slice().sort((a, b) => order[a.i.status]-order[b.i.status] || new Date(a.i.neededBy||0)-new Date(b.i.neededBy||0));
-    const estSum = list.reduce((s, e) => s + (e.est || 0), 0);
-    const actSum = list.reduce((s, e) => s + e.qbVal, 0);
+  const phaseHtml = PHASES.filter(p => Object.keys(rows[p]).length).map(phase => {
+    const list = Object.values(rows[phase]).sort((a, b) => (b.actual||0)-(a.actual||0) || (b.est||0)-(a.est||0));
+    const estSum = list.reduce((s, r) => s + (r.est||0), 0);
+    const actSum = list.reduce((s, r) => s + (r.actual||0), 0);
     return `<details open class="mat-phase">
       <summary><span>${phase} <span style="color:var(--text-muted);font-weight:400;">· ${list.length}</span></span>
-        <span class="sub-amt">Est ${fmt(estSum)}${actSum ? ' · QB ' + fmt(Math.round(actSum)) : ''}</span></summary>
+        <span class="sub-amt">${estSum?'Est '+fmt(estSum):''}${actSum?(estSum?' · ':'')+'QB '+fmt(Math.round(actSum)):''}</span></summary>
       <div class="table-wrap"><table class="budget-line-table">
-        <thead><tr><th>Item</th><th>Vendor</th><th style="text-align:right;">Est Cost</th><th style="text-align:right;">QB Actual</th><th>Status</th><th>Needed By</th></tr></thead>
-        <tbody>${sorted.map(matRow).join('')}</tbody>
+        <thead><tr><th>Scope / Item</th><th>Vendor</th><th style="text-align:right;">Estimate</th><th style="text-align:right;">QB Actual</th><th>Status</th><th>Needed By</th></tr></thead>
+        <tbody>${list.map(matRow).join('')}</tbody>
       </table></div>
     </details>`;
   }).join('');
 
-  // Labor & other QB vendors not tied to any material line (collapsed).
-  const matchedKeys = new Set();
-  items.forEach(i => { if (i.selection) return; const m = qbActualForVendor(i.vendor, glTotals); if (m) m.keys.forEach(k => matchedKeys.add(k)); });
-  const otherVendors = Object.entries(glTotals)
-    .filter(([k]) => !matchedKeys.has(k))
-    .map(([, v]) => ({ name: v.name, total: Math.round(v.total * 100) / 100 }))
-    .filter(v => Math.abs(v.total) >= 1)
-    .sort((a, b) => b.total - a.total);
-  const otherBlock = otherVendors.length ? `
-    <details class="mat-phase" style="margin-top:6px;">
-      <summary><span>Labor &amp; other QB vendors <span style="color:var(--text-muted);font-weight:400;">· not tied to materials</span></span>
-        <span class="sub-amt">QB ${fmt(Math.round(otherVendors.reduce((s,v)=>s+v.total,0)))}</span></summary>
+  const selHtml = selections.length ? `
+    <details open class="mat-phase">
+      <summary><span>Selections <span style="color:var(--text-muted);font-weight:400;">· ${selections.length}</span></span></summary>
       <div class="table-wrap"><table class="budget-line-table">
-        <thead><tr><th>Vendor</th><th style="text-align:right;">QB Actual</th></tr></thead>
-        <tbody>${otherVendors.map(v => `<tr><td>${v.name}</td><td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--blue);">${fmt(v.total)}</td></tr>`).join('')}</tbody>
+        <thead><tr><th>Item</th><th>Selection</th><th>Status</th></tr></thead>
+        <tbody>${selections.map(m => `<tr><td>${esc(m.item)}</td><td><span style="color:var(--text-muted);font-size:0.8rem;">${esc(m.vendor||'')}</span></td><td><span class="mat-status ms-${m.status}">${lbl(m.status)}</span></td></tr>`).join('')}</tbody>
       </table></div>
     </details>` : '';
 
   el.innerHTML = `
     <div class="card">
       <div class="section-header">
-        <div class="card-title">Materials Status — ${items.length} Items</div>
+        <div class="card-title">Materials &amp; Costs by Phase</div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <span class="badge badge-gold">${fmt(committed)} est</span>
+          <span class="badge badge-gold">${fmt(totEst)} est</span>
+          <span class="badge" style="background:var(--surface2);color:var(--blue);">${fmt(Math.round(totAct))} actual</span>
           ${editBtn}
         </div>
       </div>
@@ -2305,8 +2318,8 @@ function renderMaterials(project) {
         ${['installed','on-site','ordered','bid-in','not-ordered'].map(s => `<span><span class="mat-status ms-${s}">${lbl(s)}</span> ${counts[s]||0}</span>`).join('')}
       </div>
       ${phaseHtml}
-      ${otherBlock}
-      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Grouped by construction phase. Estimates marked <span class="frombid">📋 bid</span> come from a matched bid (edit a line's cost to override). QB Actual matched to vendors by name; labor-only &amp; non-material spend is in the last group.</div>
+      ${selHtml}
+      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Each phase auto-fills from actual QuickBooks spend, split line-by-line — a vendor working across phases (e.g. block labor vs. brick labor) appears under each. <span class="frombid">📋 bid</span> = estimate from a matched bid (edit on the Bids card). Needed-by &amp; status come from your material lines.</div>
     </div>`;
 }
 
