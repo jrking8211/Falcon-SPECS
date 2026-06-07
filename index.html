@@ -230,6 +230,10 @@
     .ms-ordered     { background:rgba(245,135,38,0.16); color:var(--orange); }
     .ms-bid-in      { background:rgba(201,162,39,0.15); color:var(--gold); }
     .ms-not-ordered { background:rgba(239,68,68,0.15); color:var(--red); }
+    .ms-pending  { background:rgba(201,162,39,0.15); color:var(--gold); }
+    .ms-partial  { background:rgba(245,135,38,0.16); color:var(--orange); }
+    .ms-invoiced { background:rgba(93,179,228,0.18); color:var(--blue); }
+    .ms-paid     { background:rgba(34,197,94,0.15); color:var(--green); }
     .status-legend { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; font-size:0.72rem; color:var(--text-muted); }
     .phase-bar-track { background:var(--surface2); border-radius:3px; height:6px; overflow:hidden; margin-top:4px; }
     .phase-bar-fill { height:100%; border-radius:3px; }
@@ -988,10 +992,15 @@ function descPhase(t) {
 
 // Two-tier categorizer: line description wins, then vendor default, then backstop.
 const LENDERS = ['pinnacle bank']; // construction-loan lenders → all their lines are loan costs
+// Pure single-phase suppliers whose individual line memos can mislead the keyword
+// router (e.g. Willocks sells "retaining wall" block & a "brick tank" — all still
+// CMU/Foundation). These vendors are LOCKED: the vendor wins over memo keywords.
+const VENDOR_LOCK = [['willocks','Foundation'], ['wilocks','Foundation']];
 function categorizePhase(payee, memo) {
   const vendor = (payee || '').toLowerCase();
   const desc   = (memo  || '').toLowerCase();
   if (LENDERS.some(l => vendor.includes(l))) return 'Loan / Financing'; // 0. lender wins over everything
+  for (const [k, ph] of VENDOR_LOCK) if (vendor.includes(k)) return ph; // 0b. locked single-phase vendor wins over memo keywords
   const d = descPhase(desc);                 // 1. itemized line description
   if (d) return d;
   for (const [k, ph] of VENDOR_PHASE) if (vendor.includes(k)) return ph;  // 2. vendor default
@@ -2258,17 +2267,26 @@ function renderMaterials(project) {
     if (!row.estSrc && (m.cost || 0) > 0 && !row.actual) { row.est = Number(m.cost); row.estSrc = 'manual'; } // manual estimate yields to real GL spend once invoiced
   });
 
-  // ── totals + status counts ──
+  // ── totals + QB-driven status (derived from estimate vs. actual GL spend) ──
+  // Pending = bid/estimate on file, nothing invoiced yet; Partial = some GL spend
+  // but below the estimate; Invoiced = recorded in QuickBooks (cost on the books).
+  const qbStatus = (r) => {
+    const est = r.est || 0, act = r.actual || 0;
+    if (act > 0) return (est > 0 && act < est * 0.99) ? { key: 'partial',  label: 'Partial'  }
+                                                       : { key: 'invoiced', label: 'Invoiced' };
+    if (est > 0) return { key: 'pending', label: 'Pending' };
+    return { key: 'none', label: '—' };
+  };
   let totEst = 0, totAct = 0; const counts = {};
   PHASES.forEach(p => Object.values(rows[p]).forEach(r => {
     totEst += r.est || 0; totAct += r.actual || 0;
-    const s = r.status || (r.actual ? 'invoiced' : 'not-ordered'); counts[s] = (counts[s]||0)+1;
+    const k = qbStatus(r).key; counts[k] = (counts[k] || 0) + 1;
   }));
 
   const statusCell = (r) => {
-    if (r.status) return `<span class="mat-status ms-${r.status}${editMode && r._i!==null?' clickable':''}"${editMode && r._i!==null?` onclick="cycleMaterialStatus('${project}',${r._i})" title="Click to cycle"`:''}>${lbl(r.status)}</span>`;
-    if (r.actual) return '<span style="color:var(--blue);font-size:0.68rem;">invoiced</span>';
-    return '<span style="color:var(--text-muted);">—</span>';
+    const s = qbStatus(r);
+    return s.key === 'none' ? '<span style="color:var(--text-muted);">—</span>'
+                            : `<span class="mat-status ms-${s.key}">${s.label}</span>`;
   };
   const estCell = (r) => {
     if (!r.est) return '<span style="color:var(--text-muted);">—</span>';
@@ -2282,14 +2300,12 @@ function renderMaterials(project) {
     // scope when we have one (from a material line or bid trade), else a dash.
     const scope = r.label ? esc(r.label) : '<span style="color:var(--text-muted);">—</span>';
     const ven   = r.vendor ? `<span style="font-size:0.85rem;">${esc(r.vendor)}</span>` : '<span style="color:var(--text-muted);">—</span>';
-    const need  = (editMode && r._i!==null) ? `<input class="mat-input" value="${esc(r.neededBy||'')}" onchange="saveMaterialField('${project}',${r._i},'neededBy',this.value)" placeholder="YYYY-MM-DD">` : `<span style="color:var(--text-muted);font-size:0.8rem;white-space:nowrap;">${r.neededBy||'—'}</span>`;
     return `<tr>
       <td>${scope}</td>
       <td>${ven}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;">${estCell(r)}</td>
       <td style="text-align:right;">${actCell(r)}</td>
       <td>${statusCell(r)}</td>
-      <td>${need}</td>
     </tr>`;
   };
 
@@ -2301,7 +2317,7 @@ function renderMaterials(project) {
       <summary><span>${phase} <span style="color:var(--text-muted);font-weight:400;">· ${list.length}</span></span>
         <span class="sub-amt">${estSum?'Est '+fmt(estSum):''}${actSum?(estSum?' · ':'')+'QB '+fmt(Math.round(actSum)):''}</span></summary>
       <div class="table-wrap"><table class="budget-line-table">
-        <thead><tr><th>Scope / Item</th><th>Vendor</th><th style="text-align:right;">Estimate</th><th style="text-align:right;">QB Actual</th><th>Status</th><th>Needed By</th></tr></thead>
+        <thead><tr><th>Scope / Item</th><th>Vendor</th><th style="text-align:right;">Estimate</th><th style="text-align:right;">QB Actual</th><th>Status</th></tr></thead>
         <tbody>${list.map(matRow).join('')}</tbody>
       </table></div>
     </details>`;
@@ -2322,10 +2338,10 @@ function renderMaterials(project) {
         </div>
       </div>
       <div class="status-legend">
-        ${['installed','on-site','ordered','bid-in','not-ordered'].map(s => `<span><span class="mat-status ms-${s}">${lbl(s)}</span> ${counts[s]||0}</span>`).join('')}
+        ${[['pending','Pending'],['partial','Partial'],['invoiced','Invoiced']].map(([k,l]) => `<span><span class="mat-status ms-${k}">${l}</span> ${counts[k]||0}</span>`).join('')}
       </div>
       ${phaseHtml}
-      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Each phase auto-fills from actual QuickBooks spend, split line-by-line — a vendor working across phases (e.g. block labor vs. brick labor) appears under each. <span class="frombid">📋 bid</span> = estimate from a matched bid (edit on the Bids card). Needed-by &amp; status come from your material lines; color &amp; finish selections are in the card below.</div>
+      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Each phase auto-fills from actual QuickBooks spend, split line-by-line — a vendor working across phases (e.g. block labor vs. brick labor) appears under each. <span class="frombid">📋 bid</span> = estimate from a matched bid (edit on the Bids card). Status is QuickBooks-driven: <span class="mat-status ms-pending">Pending</span> (estimate on file, nothing invoiced) → <span class="mat-status ms-partial">Partial</span> → <span class="mat-status ms-invoiced">Invoiced</span> (cost recorded in QB). Color &amp; finish selections are in the card below.</div>
     </div>`;
 }
 
