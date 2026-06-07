@@ -534,7 +534,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','market_data'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','market_data','listing_stats'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -655,6 +655,7 @@ function handleFirestoreUpdate(key) {
   else if (key === 'finishes_326')    renderFinishes('326');
   else if (key === 'loan_326')        renderLoan('326');
   else if (key === 'market_data')     { renderProjectDetail('330'); renderProjectDetail('326'); }
+  else if (key === 'listing_stats')   { renderProjectDetail('330'); renderProjectDetail('326'); }
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
 }
@@ -673,7 +674,7 @@ const PLAN_DATA = {
     address: '330 Roddy Branch Rd, Rockford, TN 37853',
     mls: '#1343220',
     listPrice: 775000,
-    daysOnMarket: 1,
+    listDate: '2026-06-03',   // MLS list date — days-on-market computes from this automatically
     sqft1st: 2267, sqft2nd: 502, sqftGarage: 686,
     sqftTotal: 2769,
     beds: 4, baths: 3,
@@ -1544,6 +1545,38 @@ function getMarketData() {
   return MARKET_DEFAULT;
 }
 
+// ─── LISTING STATS (days on market + views) ──────────────────
+// Days-on-market is COMPUTED from the MLS list date every render, so it
+// always reflects today without manual edits. Views are user-entered
+// (no MLS API) and sync across devices via the 'listing_stats' doc.
+function daysOnMarket(p) {
+  if (!p || !p.listDate) return null;
+  const start = new Date(p.listDate + 'T00:00:00');
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const days = Math.round((today - start) / 86400000);
+  return days < 0 ? 0 : days;
+}
+function getListingViews(project) {
+  const s = S.get('listing_stats', {}) || {};
+  const v = s[project];
+  return (v && typeof v.views === 'number') ? v : null;
+}
+function setListingViews(project) {
+  requireAdminThen(() => {
+    const cur = getListingViews(project);
+    const raw = prompt('Listing views for ' + project + ' Roddy Branch\n(from your MLS / Zillow / Realtor.com listing page):', cur ? cur.views : '');
+    if (raw === null) return;
+    const n = parseInt(String(raw).replace(/[^0-9]/g, ''), 10);
+    if (isNaN(n)) { alert('Please enter a number.'); return; }
+    const s = S.get('listing_stats', {}) || {};
+    const stamp = new Date().toISOString().slice(0, 10);
+    s[project] = { views: n, updated: stamp };
+    S.set('listing_stats', s);
+    renderProjectDetail(project);
+  });
+}
+
 // ─── PROJECT DETAIL (specs, budget breakdown, comps) ──────────
 function renderProjectDetail(project) {
   const container = document.getElementById('projdetail-' + project);
@@ -1580,7 +1613,11 @@ function renderProjectDetail(project) {
         <div class="card-title">Plan Specs — ${p.plan}</div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           ${p.mls ? `<span style="font-size:0.72rem;background:rgba(93,179,228,0.15);color:var(--blue);padding:2px 8px;border-radius:4px;font-weight:600;">MLS ${p.mls}</span>` : ''}
-          ${p.daysOnMarket !== undefined ? `<span style="font-size:0.72rem;color:var(--blue);font-weight:600;">● Listed ${p.daysOnMarket === 0 ? 'today' : p.daysOnMarket + ' day' + (p.daysOnMarket === 1 ? '' : 's') + ' ago'}</span>` : ''}
+          ${(() => { const dom = daysOnMarket(p); return dom !== null ? `<span style="font-size:0.72rem;color:var(--blue);font-weight:600;" title="Listed ${p.listDate}">● ${dom === 0 ? 'Listed today' : dom + ' day' + (dom === 1 ? '' : 's') + ' on market'}</span>` : ''; })()}
+          ${(() => {
+            const v = getListingViews(project);
+            return `<span onclick="setListingViews('${project}')" title="${v ? 'Updated ' + v.updated + ' — click to update' : 'Click to set listing views'}" style="font-size:0.72rem;color:${v ? 'var(--gold)' : 'var(--text-muted)'};font-weight:600;cursor:pointer;">👁 ${v ? v.views.toLocaleString() + ' views' : '+ views'}</span>`;
+          })()}
           <span style="font-size:0.72rem;color:var(--text-muted);">${p.address}</span>
         </div>
       </div>
