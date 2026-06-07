@@ -2972,17 +2972,29 @@ function checkTodoReminders(force) {
 // until confirmed). Each bid reconciles live against QB GL spend for its vendor.
 function getBids() { return S.get('bids', []); }
 
-// Compare a bid to live QB actual for that vendor. Returns {actual, variance, level, label}.
-function bidActualMeta(project, vendor, bidAmount) {
-  const glT = glVendorTotals(project);
-  const m = qbActualForVendor(vendor, glT);
-  if (!m || !m.total) return { actual: null, level: 'await', color: 'var(--text-muted)', label: 'Awaiting invoice' };
-  const actual = m.total;
-  const variance = Math.round((actual - bidAmount) * 100) / 100;
+// Compare a bid to live QB actual for that vendor — SCOPED TO THE BID'S PHASE so a
+// multi-trade vendor's other spend isn't counted (e.g. Witt rebar/footer in Foundation
+// won't hit a Witt truss bid in Framing). Returns {actual, variance, level, label}.
+function bidActualMeta(project, vendor, bidAmount, phase) {
+  const rows = parseGLRows(S.get('gl_' + project, null)) || [];
+  const toks = vendorTokens(vendor);
+  const vnorm = normVendor(vendor);
+  let total = 0, n = 0;
+  rows.forEach(r => {
+    const payeeWords = normVendor(r.payee).split(' ');
+    const vmatch = toks.length ? toks.some(t => payeeWords.includes(t))
+                              : (vnorm.length >= 6 && normVendor(r.payee).includes(vnorm));
+    if (!vmatch) return;
+    if (phase && categorizePhase(r.payee, r.memo) !== phase) return;  // phase-scoped
+    total += Number(r.amount) || 0; n++;
+  });
+  if (!n) return { actual: null, level: 'await', color: 'var(--text-muted)', label: 'Awaiting invoice' };
+  total = Math.round(total * 100) / 100;
+  const variance = Math.round((total - bidAmount) * 100) / 100;
   const tol = Math.max(250, bidAmount * 0.02);
-  if (Math.abs(variance) <= tol) return { actual, variance, level: 'on', color: 'var(--green)', label: 'On bid' };
-  if (variance > 0) return { actual, variance, level: 'over', color: 'var(--red)', label: 'Over by ' + fmt(variance) };
-  return { actual, variance, level: 'under', color: 'var(--blue)', label: 'Under by ' + fmt(Math.abs(variance)) };
+  if (Math.abs(variance) <= tol) return { actual: total, variance, level: 'on', color: 'var(--green)', label: 'On bid' };
+  if (variance > 0) return { actual: total, variance, level: 'over', color: 'var(--red)', label: 'Over by ' + fmt(variance) };
+  return { actual: total, variance, level: 'under', color: 'var(--blue)', label: 'Under by ' + fmt(Math.abs(variance)) };
 }
 
 function renderBids(project) {
@@ -2995,7 +3007,7 @@ function renderBids(project) {
   const totalBid = confirmed.reduce((s, b) => s + (Number(b.amount) || 0), 0);
 
   const row = b => {
-    const meta = bidActualMeta(project, b.vendor, Number(b.amount) || 0);
+    const meta = bidActualMeta(project, b.vendor, Number(b.amount) || 0, b.phase);
     const isPending = b.status === 'pending';
     const fileLink = b.url ? ` · <a href="${b.url}" target="_blank" style="color:var(--blue);">file</a>` : (b.file ? ` · <span style="color:var(--text-muted);">${esc(b.file)}</span>` : '');
     const actLine = meta.actual != null
@@ -3039,7 +3051,7 @@ function renderBids(project) {
       <button class="btn btn-primary btn-sm" onclick="addBid('${project}')">+ Add Bid</button>
     </div>
     <div>${listHtml}</div>
-    <div style="font-size:0.68rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Bid-vs-actual compares each bid to total QuickBooks spend for that vendor. Tolerance ±2% (or $250) = “on bid.”</div>
+    <div style="font-size:0.68rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Bid-vs-actual compares each bid to QuickBooks spend for that vendor <b>within the bid's phase</b> (so a vendor's other-trade purchases aren't counted). Tolerance ±2% (or $250) = “on bid.”</div>
   </div>`;
 }
 
