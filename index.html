@@ -1611,15 +1611,7 @@ function renderProjectDetail(project) {
     <div class="card">
       <div class="section-header">
         <div class="card-title">Plan Specs — ${p.plan}</div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          ${p.mls ? `<span style="font-size:0.72rem;background:rgba(93,179,228,0.15);color:var(--blue);padding:2px 8px;border-radius:4px;font-weight:600;">MLS ${p.mls}</span>` : ''}
-          ${(() => { const dom = daysOnMarket(p); return dom !== null ? `<span style="font-size:0.72rem;color:var(--blue);font-weight:600;" title="Listed ${p.listDate}">● ${dom === 0 ? 'Listed today' : dom + ' day' + (dom === 1 ? '' : 's') + ' on market'}</span>` : ''; })()}
-          ${(() => {
-            const v = getListingViews(project);
-            return `<span onclick="setListingViews('${project}')" title="${v ? 'Updated ' + v.updated + ' — click to update' : 'Click to set listing views'}" style="font-size:0.72rem;color:${v ? 'var(--gold)' : 'var(--text-muted)'};font-weight:600;cursor:pointer;">👁 ${v ? v.views.toLocaleString() + ' views' : '+ views'}</span>`;
-          })()}
-          <span style="font-size:0.72rem;color:var(--text-muted);">${p.address}</span>
-        </div>
+        <span style="font-size:0.72rem;color:var(--text-muted);">${p.address}</span>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
         ${p.targetCompletion ? `<div style="flex:1;min-width:180px;background:var(--surface2);border-radius:8px;padding:10px 14px;"><div class="s-lbl">🎯 Target Completion</div><div style="font-weight:700;color:var(--gold);margin-top:2px;">${p.targetCompletion}</div></div>` : ''}
@@ -1639,7 +1631,17 @@ function renderProjectDetail(project) {
     </div>
 
     <div class="card">
-        <div class="card-title">Comparable Sales &amp; Pricing</div>
+        <div class="section-header">
+          <div class="card-title">Comparable Sales &amp; Pricing</div>
+          ${p.mls ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:0.72rem;background:rgba(93,179,228,0.15);color:var(--blue);padding:2px 8px;border-radius:4px;font-weight:600;">MLS ${p.mls}</span>
+            ${(() => { const dom = daysOnMarket(p); return dom !== null ? `<span style="font-size:0.72rem;color:var(--blue);font-weight:600;" title="Listed ${p.listDate}">● ${dom === 0 ? 'Listed today' : dom + ' day' + (dom === 1 ? '' : 's') + ' on market'}</span>` : ''; })()}
+            ${(() => {
+              const v = getListingViews(project);
+              return `<span onclick="setListingViews('${project}')" title="${v ? 'Updated ' + v.updated + ' — click to update' : 'Click to set listing views'}" style="font-size:0.72rem;color:${v ? 'var(--gold)' : 'var(--text-muted)'};font-weight:600;cursor:pointer;">👁 ${v ? v.views.toLocaleString() + ' views' : '+ views'}</span>`;
+            })()}
+          </div>` : ''}
+        </div>
         <div class="comp-box">
           <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;">
             <strong>Market: Rockford / Blount County, TN</strong>
