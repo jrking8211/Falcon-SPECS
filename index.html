@@ -946,7 +946,7 @@ const VENDOR_PHASE = [
   ['foundation building','Drywall & Insulation'], ['dale insulation','Drywall & Insulation'],
   ['old city','Interior Finishes'], ['standard kitchen','Interior Finishes'],
   ['cella','Interior Finishes'], ['universal paint','Interior Finishes'],
-  ['stone design','Interior Finishes'], ['archie','Interior Finishes'], ['farmer garage','Interior Finishes'],
+  ['stone design','Interior Finishes'], ['archie','Interior Finishes'], ['farmer garage','Exterior Finishes'],
   ['costco','Interior Finishes'], ['amazon','Interior Finishes'],
   ['williams concrete','Exterior Finishes'],
 ];
@@ -959,11 +959,11 @@ function descPhase(t) {
   if (has('bank fee','loan fee','loan cost','origination','draw fee','financing','interest','lender','appraisal')) return 'Loan / Financing'; // construction-loan costs tracked independently
   if (has('lot closing','title fee','closing cost')) return 'Lot Acquired';
   if (has('footer','footing','foundation pour','cmu','block','rebar','excavat','grading','crawlspace','waterproof','sand','gravel')) return 'Foundation';
-  if (has('flatwork','driveway','sidewalk','slab','final grade','landscap','sod','seeding','retaining wall')) return 'Exterior Finishes';
+  if (has('flatwork','driveway','sidewalk','slab','final grade','landscap','sod','seeding','retaining wall','garage door','exterior paint','ext paint','siding paint','paint exterior')) return 'Exterior Finishes';
   if (has('framing','lumber','truss','roof','shingle','soffit','fascia','siding','gutter','exterior door','exterior trim','window','brick','stone install','masonry','decking')) return 'Framing & Exterior Shell';
   if (has('rough plumb','rough electric','electrical rough','rough-in','rough in','hvac','ductwork','duct ','mechanical')) return 'MEP Rough-in';
   if (has('drywall','sheetrock','gypsum','insulat')) return 'Drywall & Insulation';
-  if (has('cabinet','countertop','tile','lvp','wood floor','carpet','flooring','interior paint','interior trim','interior door','stair part','vanity','backsplash','fixture','appliance','lighting','hardware','garage door','shelving','closet shelf','shelf','fireplace')) return 'Interior Finishes';
+  if (has('cabinet','countertop','tile','lvp','wood floor','carpet','flooring','interior paint','interior trim','interior door','stair part','vanity','backsplash','fixture','appliance','lighting','hardware','shelving','closet shelf','shelf','fireplace')) return 'Interior Finishes';
   return null;
 }
 
