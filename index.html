@@ -288,6 +288,7 @@
 <!-- 330 RODDY BRANCH -->
 <div class="view active" id="view-p330">
   <div id="budget-330"></div>
+  <div id="todo-330"></div>
   <div id="projdetail-330"></div>
   <div id="phasebudget-330"></div>
   <div id="materials-330"></div>
@@ -345,6 +346,7 @@
 <!-- 326 RODDY BRANCH -->
 <div class="view" id="view-p326">
   <div id="budget-326"></div>
+  <div id="todo-326"></div>
   <div id="projdetail-326"></div>
   <div id="phasebudget-326"></div>
   <div id="loan-326"></div>
@@ -557,7 +559,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -680,8 +682,9 @@ function handleFirestoreUpdate(key) {
   else if (key === 'market_data')     { renderProjectDetail('330'); renderProjectDetail('326'); }
   else if (key === 'listing_stats')   { renderProjectDetail('330'); renderProjectDetail('326'); }
   else if (key === 'permits')         { renderProjectDetail('330'); renderProjectDetail('326'); }
-  else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); }
+  else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); renderTodos('330'); renderTodos('326'); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
+  else if (key === 'todos')           { renderTodos('330'); renderTodos('326'); }
 }
 
 // ─── QB REAL DATA (from balance sheet pulled 2026-06-04) ────────
@@ -2818,6 +2821,149 @@ function initCollapse() {
   applyCollapsed();
 }
 
+// ─── TO-DO LIST (per project; synced; due-date color coded) ────
+function getTodos() { return S.get('todos', []); }
+
+// Color + label based on proximity to the due date.
+function todoDueMeta(due, status) {
+  if (status === 'done') return { level: 'done', color: 'var(--text-muted)', label: 'Done' };
+  if (!due)            return { level: 'none', color: 'var(--border)', label: 'No due date' };
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const d = new Date(due + 'T00:00:00');
+  const days = Math.round((d - today) / 86400000);
+  const fd = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (days < 0)   return { level: 'overdue', color: 'var(--red)',    label: `Overdue ${Math.abs(days)}d · ${fd}` };
+  if (days === 0) return { level: 'today',   color: 'var(--orange)', label: `Due today · ${fd}` };
+  if (days <= 2)  return { level: 'soon',    color: 'var(--orange)', label: `Due in ${days}d · ${fd}` };
+  if (days <= 7)  return { level: 'week',    color: 'var(--gold)',   label: `Due in ${days}d · ${fd}` };
+  return { level: 'later', color: 'var(--green)', label: `Due ${fd}` };
+}
+
+function renderTodos(project) {
+  const el = document.getElementById('todo-' + project);
+  if (!el) return;
+  const todos = getTodos().filter(t => t.project === project);
+  const open = todos.filter(t => t.status !== 'done').sort((a, b) => (a.due || '9999-99-99') < (b.due || '9999-99-99') ? -1 : 1);
+  const done = todos.filter(t => t.status === 'done').sort((a, b) => (b.doneAt || '') < (a.doneAt || '') ? 1 : -1);
+  let overdue = 0, soon = 0;
+  open.forEach(t => { const m = todoDueMeta(t.due, t.status); if (m.level === 'overdue') overdue++; else if (m.level === 'today' || m.level === 'soon') soon++; });
+  const emps = getEmployees();
+  const datalist = `<datalist id="todo-emps-${project}">${emps.map(e => `<option value="${esc(e.name)}">`).join('')}</datalist>`;
+  const notifOn = ('Notification' in window) && Notification.permission === 'granted';
+
+  const row = t => {
+    const m = todoDueMeta(t.due, t.status);
+    const isDone = t.status === 'done';
+    return `<div style="display:flex;align-items:center;gap:10px;background:var(--surface2);border-left:3px solid ${m.color};border-radius:6px;padding:10px 12px;margin-bottom:8px;${isDone ? 'opacity:0.55;' : ''}">
+      <input type="checkbox" ${isDone ? 'checked' : ''} onclick="toggleTodo('${t.id}')" style="width:18px;height:18px;cursor:pointer;flex-shrink:0;accent-color:var(--gold);">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:0.9rem;word-break:break-word;${isDone ? 'text-decoration:line-through;color:var(--text-muted);' : ''}">${esc(t.text)}</div>
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:3px;">
+          ${t.assignee ? `👤 ${esc(t.assignee)} &nbsp;·&nbsp; ` : ''}<span style="color:${m.color};font-weight:700;">${m.label}</span>
+        </div>
+      </div>
+      <button onclick="deleteTodo('${t.id}')" class="btn btn-danger btn-sm" style="flex-shrink:0;">✕</button>
+    </div>`;
+  };
+
+  const listHtml = (open.length || done.length)
+    ? open.map(row).join('') + (done.length ? `<div style="font-size:0.7rem;color:var(--text-muted);margin:12px 0 6px;text-transform:uppercase;letter-spacing:0.05em;">Completed (${done.length})</div>` + done.map(row).join('') : '')
+    : '<div class="empty-state" style="padding:18px;">No tasks yet — add one above.</div>';
+
+  el.innerHTML = `
+  <div class="card">
+    <div class="section-header">
+      <div class="card-title">To-Do List</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        ${overdue ? `<span class="badge" style="background:var(--red);color:#fff;">${overdue} overdue</span>` : ''}
+        ${soon ? `<span class="badge" style="background:var(--orange);color:#10242e;">${soon} due soon</span>` : ''}
+        <span class="badge badge-gray">${open.length} open</span>
+        <button class="edit-toggle${notifOn ? ' on' : ''}" onclick="todoEnableReminders()" title="Enable browser reminders for due tasks on this device">🔔 ${notifOn ? 'Reminders on' : 'Reminders'}</button>
+      </div>
+    </div>
+    ${datalist}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
+      <div style="flex:3;min-width:200px;">
+        <div class="s-lbl" style="margin-bottom:4px;">Task</div>
+        <input id="todo-text-${project}" class="mat-input" placeholder="What needs to be done?" style="width:100%;" onkeydown="if(event.key==='Enter')addTodo('${project}')">
+      </div>
+      <div style="flex:1;min-width:130px;">
+        <div class="s-lbl" style="margin-bottom:4px;">Assign to</div>
+        <input id="todo-assignee-${project}" class="mat-input" list="todo-emps-${project}" placeholder="Name…" style="width:100%;">
+      </div>
+      <div style="min-width:140px;">
+        <div class="s-lbl" style="margin-bottom:4px;">Due date</div>
+        <input id="todo-due-${project}" type="date" class="mat-input" style="width:100%;">
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="addTodo('${project}')">+ Add Task</button>
+    </div>
+    <div>${listHtml}</div>
+  </div>`;
+}
+
+function addTodo(project) {
+  const textEl = document.getElementById('todo-text-' + project);
+  const assEl  = document.getElementById('todo-assignee-' + project);
+  const dueEl  = document.getElementById('todo-due-' + project);
+  const text = textEl.value.trim();
+  if (!text) { toast('Enter a task description.', 'error'); return; }
+  const assignee = assEl.value.trim();
+  const due = dueEl.value;
+  const todos = getTodos();
+  todos.push({
+    id: 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    project, text, assignee, due, status: 'open', createdAt: new Date().toISOString()
+  });
+  S.set('todos', todos);
+  textEl.value = ''; assEl.value = ''; dueEl.value = '';
+  renderTodos(project);
+  toast(assignee ? `Task added for ${assignee}` : 'Task added');
+}
+
+function toggleTodo(id) {
+  const todos = getTodos();
+  const t = todos.find(x => x.id === id);
+  if (!t) return;
+  t.status = t.status === 'done' ? 'open' : 'done';
+  t.doneAt = t.status === 'done' ? new Date().toISOString() : null;
+  S.set('todos', todos);
+  renderTodos(t.project);
+}
+
+function deleteTodo(id) {
+  const todos = getTodos();
+  const t = todos.find(x => x.id === id);
+  const proj = t ? t.project : null;
+  S.set('todos', todos.filter(x => x.id !== id));
+  if (proj) renderTodos(proj);
+}
+
+// Browser reminders (work on whatever device has the dashboard open + permission).
+function todoEnableReminders() {
+  if (!('Notification' in window)) { toast('This browser does not support notifications.', 'error'); return; }
+  Notification.requestPermission().then(p => {
+    if (p === 'granted') { toast('Reminders enabled on this device'); renderTodos('330'); renderTodos('326'); checkTodoReminders(true); }
+    else { toast('Reminders blocked — enable notifications for this site in your browser settings.', 'error'); }
+  });
+}
+function checkTodoReminders(force) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const due = getTodos().filter(t => t.status !== 'done' && t.due && (new Date(t.due + 'T00:00:00') - today) / 86400000 <= 0);
+  if (!due.length) return;
+  const stamp = today.toISOString().slice(0, 10);
+  if (!force && localStorage.getItem('fd_todo_notified') === stamp) return;  // once/day per device
+  localStorage.setItem('fd_todo_notified', stamp);
+  const n = due.length;
+  try {
+    new Notification(`Falcon — ${n} task${n > 1 ? 's' : ''} due or overdue`, {
+      body: due.slice(0, 6).map(t => `• ${t.text}${t.assignee ? ' (' + t.assignee + ')' : ''}`).join('\n')
+    });
+  } catch (e) { /* ignore */ }
+}
+
 function init() {
   initGate();
   initCollapse();
@@ -2831,6 +2977,8 @@ function init() {
   renderMaterials('330'); renderMaterials('326');
   renderFinishes('330'); renderFinishes('326');
   renderLoan('326');
+  renderTodos('330'); renderTodos('326');
+  checkTodoReminders(false);
   refreshEmployeeSelects();
   refreshProjectDropdown();
   refreshCostCodeDropdown();
