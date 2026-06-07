@@ -1921,6 +1921,68 @@ function vendorOpenAP(project, vendor) {
   }, 0);
 }
 
+// Default scope text for GL-only vendor rows (no manual material line, no bid).
+// Some vendors do different work by phase, so entries may pin a phase (ph); the
+// lookup prefers a phase-specific match, then a phase-agnostic one. Manual line
+// items and bid trades always take precedence over these (set only when blank).
+const VENDOR_SCOPE = [
+  // Foundation
+  { v: 'willocks', label: 'CMU block & masonry materials' }, { v: 'wilocks', label: 'CMU block & masonry materials' },
+  { v: 'claiborn', label: 'Rock & sand (site/foundation)' },
+  { v: 'srm concrete', label: 'Ready-mix concrete' },
+  { v: 'little river', label: 'Excavation' },
+  { v: 'dunlap', label: 'Excavation & footer' },
+  { v: 'pro pump', label: 'Concrete pumping' }, { v: 'concrete pump', label: 'Concrete pumping' },
+  { v: 'ag heins', label: 'Foundation & site materials' }, { v: 'a g heins', label: 'Foundation & site materials' },
+  { v: 'construction services', ph: 'Foundation', label: 'CMU block labor' },
+  { v: 'construction services', ph: 'Exterior Finishes', label: 'Brick & stone mason labor' },
+  { v: 'witt', ph: 'Foundation', label: 'Rebar & footer materials' },
+  { v: 'witt', ph: 'Interior Finishes', label: 'Interior trim' },
+  { v: 'us brick', ph: 'Foundation', label: 'Masonry sand' },
+  { v: 'us brick', ph: 'Exterior Finishes', label: 'Brick veneer & mortar' },
+  // Framing & Exterior Shell
+  { v: 'carlos baca', ph: 'Framing & Exterior Shell', label: 'Framing & roofing labor' },
+  { v: 'carlos baca', ph: 'Drywall & Insulation', label: 'Drywall hang & finish labor' },
+  { v: 'lansing', label: 'Siding, trim & vinyl materials' },
+  { v: 'tn crane', label: 'Crane service' },
+  { v: 'reagan steel', label: 'Steel beams' },
+  { v: 'duo fast', label: 'Fasteners' },
+  { v: 'archie', ph: 'Framing & Exterior Shell', label: 'Chimney flashing / misc' },
+  // MEP Rough-in
+  { v: 'phoenix', label: 'Electrical rough-in & labor' }, { v: 'pheonix', label: 'Electrical rough-in & labor' },
+  { v: 'noland', label: 'Plumbing materials' },
+  { v: 'amazon', ph: 'MEP Rough-in', label: 'Plumbing fixtures & supplies' },
+  { v: 'ferguson', ph: 'MEP Rough-in', label: 'Plumbing materials & fixtures' },
+  // Drywall & Insulation
+  { v: 'dale insulation', label: 'Insulation & closet shelving' },
+  // Exterior Finishes
+  { v: 'williams concrete', label: 'Flatwork — driveway & sidewalks' },
+  // Utilities / Site Fees
+  { v: 'knox chapman', label: 'Water / sewer / tap fees' }, { v: 'knox champan', label: 'Water / sewer / tap fees' },
+  { v: 'united rentals', label: 'Portable toilet rental' },
+  { v: 'city of alcoa', label: 'Dump / sanitation fees' },
+  { v: 'city of maryville', label: 'Electric service fees' },
+  // Permits, Design & Soft Costs
+  { v: 'etn survey', label: 'Site survey' },
+  { v: 'cianciolo', label: 'House plans / design' },
+  { v: 'blount county building', label: 'Building permit fees' },
+  { v: 'blount county trustee', label: 'Property taxes' },
+  { v: 'hanover', label: "Builder's risk insurance" },
+  { v: 'blue print', label: 'Plan printing' },
+  { v: 'city of knox', label: 'City / permit fees' },
+  { v: 'sherwin', label: 'Paint supplies' },
+  // General (phase-agnostic; keep last so the specifics above win)
+  { v: 'home depot', label: 'General job-site supplies' },
+  { v: 'amazon', label: 'Fixtures & misc supplies' },
+];
+function scopeForVendor(vendor, phase) {
+  const v = normVendor(vendor);
+  if (!v) return '';
+  for (const e of VENDOR_SCOPE) if (e.ph === phase && v.includes(e.v)) return e.label;   // phase-specific first
+  for (const e of VENDOR_SCOPE) if (!e.ph && v.includes(e.v)) return e.label;            // then phase-agnostic
+  return '';
+}
+
 // ── QB vendor matching: tie live GL spend to material vendors by name ──
 const GENERIC_VENDOR_WORDS = new Set(['the','and','llc','inc','co','company','services','service','building','materials','material','design','group','enterprises','one','plumbing','electric','electrical','painting','flooring','construction','supply','center','tbd','confirm','net','terms']);
 function normVendor(s) { return (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -2348,6 +2410,7 @@ function renderMaterials(project) {
 
   const phaseHtml = PHASES.filter(p => Object.keys(rows[p]).length).map(phase => {
     const list = Object.values(rows[phase]).sort((a, b) => (b.actual||0)-(a.actual||0) || (b.est||0)-(a.est||0));
+    list.forEach(r => { if (!r.label) r.label = scopeForVendor(r.vendor, phase); }); // default scope for GL-only vendors
     const estSum = list.reduce((s, r) => s + (r.est||0), 0);
     const actSum = list.reduce((s, r) => s + (r.actual||0), 0);
     return `<details open class="mat-phase">
