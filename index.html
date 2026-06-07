@@ -2695,6 +2695,7 @@ function renderDocList(project, docs) {
       </div>
       <div class="doc-actions">
         <a href="${d.url}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">↓ Open</a>
+        <button onclick="editDocLabel('${project}','${d.id}')" class="btn btn-secondary btn-sm" title="Rename label">✎</button>
         <button onclick="deleteDoc('${project}','${d.id}','${esc(d.storagePath||'')}')" class="btn btn-danger btn-sm">✕</button>
       </div>
     </div>`;
@@ -2705,6 +2706,20 @@ function handleDocFiles(event, project) {
   const files = Array.from(event.target.files);
   uploadDocs(project, files);
   event.target.value = '';
+}
+
+// Rename a document's display label (and optionally its category) in place.
+async function editDocLabel(project, docId) {
+  if (!db) return;
+  let cur = '';
+  try { const snap = await db.collection('docs_' + project).doc(docId).get(); if (snap.exists) cur = snap.data().label || ''; } catch (e) {}
+  const v = prompt('Document label (what shows on the dashboard):', cur);
+  if (v === null) return;
+  try {
+    await db.collection('docs_' + project).doc(docId).update({ label: v.trim() });
+    toast('Document renamed');
+  } catch (e) { toast('Rename failed: ' + e.message, 'error'); }
+  // loadDocs onSnapshot re-renders automatically
 }
 
 async function uploadDocs(project, files) {
