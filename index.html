@@ -808,6 +808,7 @@ const PLAN_DATA = {
 const PHASE_STAGES = {
   'Lot Acquired':                 ['Lot Closed'],
   'Permits, Design & Soft Costs': ['Plans Finalized','Permits Issued','Site Prep'],
+  'Utilities / Site Fees':        ['Water / Sewer Tap','Electric Service','Sanitation / Dumpster'],
   'Foundation':                   ['Footings Poured','Foundation Poured','Foundation Complete'],
   'Framing & Exterior Shell':     ['Framing Started','Framing Complete','Roof Sheathing','Roof Complete','Windows & Doors','Siding / Brick','Exterior Trim','Exterior Paint'],
   'MEP Rough-in':                 ['Rough Plumbing','Rough Electrical','Rough HVAC'],
@@ -822,7 +823,8 @@ const PHASE_ORDER = Object.keys(PHASE_STAGES);
 
 // Optional context note shown under a phase in the budget table.
 const PHASE_FLAGS = {
-  'Permits, Design & Soft Costs': 'survey, permits, architect, GC, insurance, sanitation',
+  'Permits, Design & Soft Costs': 'survey, permits, architect, GC, builder\'s risk insurance',
+  'Utilities / Site Fees':        'water/sewer tap, electric service, dumpster, portable toilet',
   'Framing & Exterior Shell':     'incl. roofing, siding, brick, windows, gutters',
   'Exterior Finishes':            'driveway, sidewalks, final grade, landscaping',
   'Loan / Financing':             'Pinnacle Bank construction loan — 326 only (330 is Falcon cash)',
@@ -831,8 +833,8 @@ const PHASE_FLAGS = {
 // Default $ allocation per phase, per project. Editable on the dashboard (admin
 // PIN) → stored override in phasebudget_<project>.
 const PHASE_BUDGET_DEFAULT = {
-  '330': { 'Lot Acquired':95000, 'Permits, Design & Soft Costs':22000, 'Foundation':50000, 'Framing & Exterior Shell':185000, 'MEP Rough-in':90000, 'Drywall & Insulation':25000, 'Interior Finishes':80000, 'Exterior Finishes':20000, 'Punch List':10000, 'Listing / Sale':5000, 'Loan / Financing':0 },
-  '326': { 'Lot Acquired':75000, 'Permits, Design & Soft Costs':22000, 'Foundation':50000, 'Framing & Exterior Shell':185000, 'MEP Rough-in':90000, 'Drywall & Insulation':25000, 'Interior Finishes':80000, 'Exterior Finishes':20000, 'Punch List':10000, 'Listing / Sale':5000, 'Loan / Financing':20000 },
+  '330': { 'Lot Acquired':95000, 'Permits, Design & Soft Costs':16000, 'Utilities / Site Fees':6000, 'Foundation':50000, 'Framing & Exterior Shell':185000, 'MEP Rough-in':90000, 'Drywall & Insulation':25000, 'Interior Finishes':80000, 'Exterior Finishes':20000, 'Punch List':10000, 'Listing / Sale':5000, 'Loan / Financing':0 },
+  '326': { 'Lot Acquired':75000, 'Permits, Design & Soft Costs':16000, 'Utilities / Site Fees':6000, 'Foundation':50000, 'Framing & Exterior Shell':185000, 'MEP Rough-in':90000, 'Drywall & Insulation':25000, 'Interior Finishes':80000, 'Exterior Finishes':20000, 'Punch List':10000, 'Listing / Sale':5000, 'Loan / Financing':20000 },
 };
 
 // Industry-average share of CONSTRUCTION cost by phase, based on NAHB's
@@ -921,7 +923,7 @@ function phaseBudget(project, phaseName) {
 // edge of active construction work. Listing/Sale runs in parallel (spec homes
 // list mid-build) so it's excluded from the construction current-phase.
 function currentPhaseLabel(project) {
-  const constr = PHASE_ORDER.filter(ph => ph !== 'Listing / Sale' && ph !== 'Loan / Financing');
+  const constr = PHASE_ORDER.filter(ph => ph !== 'Listing / Sale' && ph !== 'Loan / Financing' && ph !== 'Utilities / Site Fees');
   let latestActive = null, allDone = true;
   constr.forEach(ph => {
     const st = phaseStageStatus(project, ph).status;
@@ -959,12 +961,12 @@ const VENDOR_PHASE = [
   ['costco','Interior Finishes'], ['amazon','Interior Finishes'],
   ['williams concrete','Exterior Finishes'],
   ['ag heins','Foundation'], ['a g heins','Foundation'], // foundation & site materials
-  // General conditions / site soft costs (jobsite services, insurance, utility & dump fees):
-  ['united rentals','Permits, Design & Soft Costs'],   // portable toilet rental
-  ['hanover','Permits, Design & Soft Costs'],           // builder's risk insurance
-  ['knox chapman','Permits, Design & Soft Costs'], ['knox champan','Permits, Design & Soft Costs'], // water/sewer/tap fees
-  ['city of alcoa','Permits, Design & Soft Costs'],     // dump fees
-  ['city of maryville','Permits, Design & Soft Costs'], // electrical/utility fees
+  ['hanover','Permits, Design & Soft Costs'],            // builder's risk insurance (soft cost)
+  // Utilities / site fees (tap fees, utility connections, dumpster, portable toilet):
+  ['united rentals','Utilities / Site Fees'],           // portable toilet rental
+  ['knox chapman','Utilities / Site Fees'], ['knox champan','Utilities / Site Fees'], // water/sewer/tap fees
+  ['city of alcoa','Utilities / Site Fees'],            // dump / sanitation fees
+  ['city of maryville','Utilities / Site Fees'],        // electric service fees
 ];
 
 // Work/material description keywords → phase. Itemized line descriptions win
@@ -974,6 +976,7 @@ function descPhase(t) {
   const has = (...kw) => kw.some(k => t.includes(k));
   if (has('bank fee','loan fee','loan cost','origination','draw fee','financing','interest','lender','appraisal')) return 'Loan / Financing'; // construction-loan costs tracked independently
   if (has('lot closing','title fee','closing cost')) return 'Lot Acquired';
+  if (has('tap fee','sewer tap','water tap','dumpster','dump fee','portable toilet','porta-john','porta john','sanitation','temp power','temporary power','utility deposit','meter fee','impact fee')) return 'Utilities / Site Fees'; // site services & utility connections (bare 'sewer'/'water' avoided — collide with plumbing)
   if (has('footer','footing','foundation pour','cmu','block','rebar','excavat','grading','crawlspace','waterproof','sand','gravel')) return 'Foundation';
   if (has('flatwork','driveway','sidewalk','slab','final grade','landscap','sod','seeding','retaining wall','garage door','exterior paint','ext paint','siding paint','paint exterior','brick','mortar','brick veneer','brick labor','finish brick','weep','wall tie','lintel','stone install','stone veneer')) return 'Exterior Finishes'; // finish brick/stone veneer = exterior finish (NOT structural block, which is caught above by cmu/block)
   if (has('framing','lumber','truss','roof','shingle','soffit','fascia','siding','gutter','exterior door','exterior trim','window','decking')) return 'Framing & Exterior Shell';
