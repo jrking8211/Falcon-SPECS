@@ -3019,7 +3019,9 @@ function renderBids(project) {
         <div style="font-weight:800;font-size:0.95rem;">${fmt(Number(b.amount) || 0)}</div>
       </div>
       <div style="font-size:0.72rem;color:var(--text-muted);margin-top:3px;">
-        ${esc(b.phase || '')}${b.date ? ' · ' + esc(b.date) : ''}${fileLink}<br>${actLine}
+        ${esc(b.phase || '')}${b.date ? ' · ' + esc(b.date) : ''}${fileLink}
+        ${(b.priorAmount && Number(b.priorAmount) !== Number(b.amount)) ? `<br><span style="color:var(--orange);font-weight:700;">↻ Revised: ${fmt(Number(b.priorAmount))} → ${fmt(Number(b.amount))}</span>` : ''}
+        <br>${actLine}
       </div>
       ${isPending ? `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
         <span style="font-size:0.66rem;background:var(--orange);color:#10242e;padding:2px 7px;border-radius:4px;font-weight:700;">⚠ REVIEW${b.confidence === 'low' ? ' (low confidence)' : ''}</span>
@@ -3063,6 +3065,22 @@ function addBid(project) {
   if (!v) { toast('Enter a vendor.', 'error'); return; }
   if (amount <= 0) { toast('Enter the bid amount.', 'error'); return; }
   const bids = getBids();
+  const nv = normVendor(v), nt = normVendor(trade);
+  // Revision-aware: same project + vendor + trade → supersede in place, keep prior amount.
+  const existing = nt ? bids.find(b => b.project === project && normVendor(b.vendor) === nv && normVendor(b.trade) === nt) : null;
+  if (existing) {
+    if (Number(existing.amount) !== amount) existing.priorAmount = existing.amount;
+    existing.amount = amount; existing.phase = phase || existing.phase;
+    existing.date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    existing.revisedAt = new Date().toISOString();
+    S.set('bids', bids);
+    document.getElementById('bid-vendor-' + project).value = '';
+    document.getElementById('bid-trade-' + project).value = '';
+    document.getElementById('bid-amount-' + project).value = '';
+    renderBids(project);
+    toast(`Bid updated: ${v} ${existing.priorAmount ? '(' + fmt(Number(existing.priorAmount)) + ' → ' + fmt(amount) + ')' : ''}`);
+    return;
+  }
   bids.push({
     id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     project, vendor: v, trade, phase, amount,
