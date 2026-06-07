@@ -2293,15 +2293,23 @@ function renderMaterials(project) {
   });
 
   // ── totals + QB-driven status (GL spend + A/P payment state) ──
-  // Pending = estimate on file, nothing billed yet; Invoiced = cost recorded in QB
-  // but a balance is still owed (open A/P); Paid = recorded AND nothing owed.
+  // Pending = estimate on file, nothing billed yet; Invoiced = billed, full balance
+  // still owed; Partial = billed, partly paid; Paid = billed AND nothing owed.
+  // Payment is per-VENDOR (A/P isn't split by phase), so vendorBilled sums a
+  // vendor's GL spend across phases to tell "fully owed" from "partly paid".
   const apData = getAP(project);
+  const vendorBilled = {};
+  PHASES.forEach(p => Object.values(rows[p]).forEach(r => {
+    if (r.actual) { const k = normVendor(r.vendor); vendorBilled[k] = (vendorBilled[k] || 0) + r.actual; }
+  }));
   const qbStatus = (r) => {
     const est = r.est || 0, act = r.actual || 0;
     if (act > 0) {
       const open = r.vendor ? vendorOpenAP(project, r.vendor) : 0;
-      return open > 1 ? { key: 'invoiced', label: 'Invoiced' }   // billed, balance owed
-                      : { key: 'paid',     label: 'Paid' };       // billed, paid off
+      if (open <= 1) return { key: 'paid', label: 'Paid' };                      // billed, paid off
+      const billed = vendorBilled[normVendor(r.vendor)] || act;
+      return open < billed * 0.99 ? { key: 'partial',  label: 'Partial'  }       // billed, partly paid
+                                  : { key: 'invoiced', label: 'Invoiced' };      // billed, full balance owed
     }
     if (est > 0) return { key: 'pending', label: 'Pending' };
     return { key: 'none', label: '—' };
@@ -2368,10 +2376,10 @@ function renderMaterials(project) {
         </div>
       </div>
       <div class="status-legend">
-        ${[['pending','Pending'],['invoiced','Invoiced'],['paid','Paid']].map(([k,l]) => `<span><span class="mat-status ms-${k}">${l}</span> ${counts[k]||0}</span>`).join('')}
+        ${[['pending','Pending'],['invoiced','Invoiced'],['partial','Partial'],['paid','Paid']].map(([k,l]) => `<span><span class="mat-status ms-${k}">${l}</span> ${counts[k]||0}</span>`).join('')}
       </div>
       ${phaseHtml}
-      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Each phase auto-fills from actual QuickBooks spend, split line-by-line — a vendor working across phases (e.g. block labor vs. brick labor) appears under each. <span class="frombid">📋 bid</span> = estimate from a matched bid (edit on the Bids card). Status is QuickBooks-driven: <span class="mat-status ms-pending">Pending</span> (estimate on file, nothing billed) → <span class="mat-status ms-invoiced">Invoiced</span> (billed, balance still owed) → <span class="mat-status ms-paid">Paid</span> (billed &amp; paid off). Payment state comes from QuickBooks A/P${apData.asOf?', synced '+apData.asOf:''}. Color &amp; finish selections are in the card below.</div>
+      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Each phase auto-fills from actual QuickBooks spend, split line-by-line — a vendor working across phases (e.g. block labor vs. brick labor) appears under each. <span class="frombid">📋 bid</span> = estimate from a matched bid (edit on the Bids card). Status is QuickBooks-driven: <span class="mat-status ms-pending">Pending</span> (estimate on file, nothing billed) → <span class="mat-status ms-invoiced">Invoiced</span> (billed, owed) → <span class="mat-status ms-partial">Partial</span> (partly paid) → <span class="mat-status ms-paid">Paid</span> (paid off). Payment state comes from QuickBooks A/P${apData.asOf?', synced '+apData.asOf:''}. Color &amp; finish selections are in the card below.</div>
     </div>`;
 }
 
