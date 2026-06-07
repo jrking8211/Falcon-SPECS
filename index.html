@@ -1087,38 +1087,40 @@ function computePhases(project) {
   };
 }
 
-// ─── MATERIALS STATUS (27 line items, from handoff) ───────────
-// status: not-ordered | bid-in | ordered | on-site | installed
+// ─── MATERIALS STATUS (from handoff) ──────────────────────────
+// Each line carries a STABLE `id` — overrides (materials_<project>) are keyed by
+// id, NOT array position, so inserting/removing a seed line never shifts saved
+// edits. ids must be unique and must never be reused for a different item.
 const MATERIALS = {
   '330': [
-    { item: 'Drywall materials', vendor: 'Foundation Building Materials', cost: 8157, status: 'on-site', neededBy: '2026-05-20' },
-    { item: 'Interior paint + labor (Est #909)', vendor: 'Universal Painting LLC', cost: 17403, status: 'ordered', neededBy: '2026-06-08' },
-    { item: 'Interior paint colors (SW)', vendor: 'Greek Villa + Extra White', cost: 0, status: 'installed', neededBy: '2026-06-05', selection: true },
-    { item: 'Exterior paint colors (SW)', vendor: 'Poolhouse / In the Navy / Accessible Beige / Extra White', cost: 0, status: 'installed', neededBy: '2026-06-20', selection: true },
-    { item: 'Exterior paint + labor (siding + trim)', vendor: 'Painter (confirm if Universal)', cost: 8800, status: 'ordered', neededBy: '2026-07-15' },
-    { item: 'Cabinets', vendor: 'Old City Kitchens', cost: 18305, status: 'ordered', neededBy: '2026-06-08' }, // kitchen + bath vanities (one cabinet vendor)
-    { item: 'Master bath floor tile (100 SF)', vendor: 'Cella Flooring & Design', cost: 2000, status: 'ordered', neededBy: '2026-06-15' },
-    { item: 'Master shower tile (221 SF custom)', vendor: 'Cella Flooring & Design', cost: 10608, status: 'ordered', neededBy: '2026-06-15' },
-    { item: 'Hall bath floor tile (35 SF)', vendor: 'Cella Flooring & Design', cost: 560, status: 'ordered', neededBy: '2026-06-15' },
-    { item: 'Kitchen backsplash tile', vendor: 'Cella Flooring & Design', cost: 2500, status: 'ordered', neededBy: '2026-06-22' },
-    { item: 'Main level LVP (2,180 SF)', vendor: 'Cella Flooring & Design', cost: 14933, status: 'ordered', neededBy: '2026-06-22' },
-    { item: 'Bonus room + stairs carpet (816 SF)', vendor: 'Cella Flooring & Design', cost: 4122, status: 'ordered', neededBy: '2026-07-10' },
-    { item: 'Cella — proposal accepted', vendor: 'Net terms (no deposit)', cost: 0, status: 'installed', neededBy: '2026-05-25', selection: true },
-    { item: 'Trim package', vendor: 'Witt Building Material', cost: 0, status: 'ordered', neededBy: '2026-06-08' },
-    { item: 'Interior doors', vendor: 'TBD', cost: 0, status: 'ordered', neededBy: '2026-06-15' },
-    { item: 'Plumbing rough-in + materials (incl. upstairs bath add-on)', vendor: 'Priority Plumbing LLC', cost: 9000, status: 'ordered', neededBy: '2026-06-25' },
-    { item: 'Electrical fixtures', vendor: 'Phoenix Electric / TBD', cost: 0, status: 'not-ordered', neededBy: '2026-07-05' },
-    { item: 'HVAC final setout (~$22K pending)', vendor: 'A1 Finchum', cost: 0, status: 'ordered', neededBy: '2026-09-15' },
+    { id: 'drywall',          item: 'Drywall materials', vendor: 'Foundation Building Materials', cost: 8157, status: 'on-site', neededBy: '2026-05-20' },
+    { id: 'int-paint',        item: 'Interior paint + labor (Est #909)', vendor: 'Universal Painting LLC', cost: 17403, status: 'ordered', neededBy: '2026-06-08' },
+    { id: 'int-paint-colors', item: 'Interior paint colors (SW)', vendor: 'Greek Villa + Extra White', cost: 0, status: 'installed', neededBy: '2026-06-05', selection: true },
+    { id: 'ext-paint-colors', item: 'Exterior paint colors (SW)', vendor: 'Poolhouse / In the Navy / Accessible Beige / Extra White', cost: 0, status: 'installed', neededBy: '2026-06-20', selection: true },
+    { id: 'ext-paint',        item: 'Exterior paint + labor (siding + trim)', vendor: 'Painter (confirm if Universal)', cost: 8800, status: 'ordered', neededBy: '2026-07-15' },
+    { id: 'cabinets',         item: 'Cabinets', vendor: 'Old City Kitchens', cost: 18305, status: 'ordered', neededBy: '2026-06-08' }, // kitchen + bath vanities (one cabinet vendor)
+    { id: 'mbath-floor-tile', item: 'Master bath floor tile (100 SF)', vendor: 'Cella Flooring & Design', cost: 2000, status: 'ordered', neededBy: '2026-06-15' },
+    { id: 'mshower-tile',     item: 'Master shower tile (221 SF custom)', vendor: 'Cella Flooring & Design', cost: 10608, status: 'ordered', neededBy: '2026-06-15' },
+    { id: 'hbath-floor-tile', item: 'Hall bath floor tile (35 SF)', vendor: 'Cella Flooring & Design', cost: 560, status: 'ordered', neededBy: '2026-06-15' },
+    { id: 'kitchen-backsplash', item: 'Kitchen backsplash tile', vendor: 'Cella Flooring & Design', cost: 2500, status: 'ordered', neededBy: '2026-06-22' },
+    { id: 'main-lvp',         item: 'Main level LVP (2,180 SF)', vendor: 'Cella Flooring & Design', cost: 14933, status: 'ordered', neededBy: '2026-06-22' },
+    { id: 'bonus-carpet',     item: 'Bonus room + stairs carpet (816 SF)', vendor: 'Cella Flooring & Design', cost: 4122, status: 'ordered', neededBy: '2026-07-10' },
+    { id: 'cella-proposal',   item: 'Cella — proposal accepted', vendor: 'Net terms (no deposit)', cost: 0, status: 'installed', neededBy: '2026-05-25', selection: true },
+    { id: 'trim',             item: 'Trim package', vendor: 'Witt Building Material', cost: 0, status: 'ordered', neededBy: '2026-06-08' },
+    { id: 'int-doors',        item: 'Interior doors', vendor: 'TBD', cost: 0, status: 'ordered', neededBy: '2026-06-15' },
+    { id: 'plumbing-rough',   item: 'Plumbing rough-in + materials (incl. upstairs bath add-on)', vendor: 'Priority Plumbing LLC', cost: 9000, status: 'ordered', neededBy: '2026-06-25' },
+    { id: 'elec-fixtures',    item: 'Electrical fixtures', vendor: 'Phoenix Electric / TBD', cost: 0, status: 'not-ordered', neededBy: '2026-07-05' },
+    { id: 'hvac',             item: 'HVAC final setout (~$22K pending)', vendor: 'A1 Finchum', cost: 0, status: 'ordered', neededBy: '2026-09-15' },
     // Masonry (block + brick) intentionally NOT a manual line — it's driven directly
     // from the QuickBooks GL, which splits it: block labor -> Foundation, brick labor -> Exterior Finishes.
-    { item: 'Appliances', vendor: 'Costco', cost: 0, status: 'not-ordered', neededBy: '2026-07-25' },
-    { item: 'Hardware (knobs / pulls)', vendor: 'TBD', cost: 0, status: 'not-ordered', neededBy: '2026-07-10' },
-    { item: 'Fireplace + stone', vendor: "Archie's", cost: 4135, status: 'installed', neededBy: '2026-04-15' },
-    { item: 'Gutters (materials + labor)', vendor: 'Robbins Siding & Guttering', cost: 1440, status: 'installed', neededBy: '2026-05-08' },
-    { item: 'Soffit & Fascia install labor', vendor: 'Robbins Siding & Guttering', cost: 4834, status: 'installed', neededBy: '2026-05-08' },
-    { item: 'Downspouts (bill pending)', vendor: 'Robbins Siding & Guttering', cost: 0, status: 'ordered', neededBy: '2026-06-30' },
-    { item: 'Garage door', vendor: 'Farmer Garage Door', cost: 5400, status: 'ordered', neededBy: '2026-07-01' },
-    { item: 'Plumbing materials — fiberglass shower (upstairs bath add-on)', vendor: 'Ferguson', cost: 950, status: 'ordered', neededBy: '2026-06-25' },
+    { id: 'appliances',       item: 'Appliances', vendor: 'Costco', cost: 0, status: 'not-ordered', neededBy: '2026-07-25' },
+    { id: 'hardware',         item: 'Hardware (knobs / pulls)', vendor: 'TBD', cost: 0, status: 'not-ordered', neededBy: '2026-07-10' },
+    { id: 'fireplace',        item: 'Fireplace + stone', vendor: "Archie's", cost: 4135, status: 'installed', neededBy: '2026-04-15' },
+    { id: 'gutters',          item: 'Gutters (materials + labor)', vendor: 'Robbins Siding & Guttering', cost: 1440, status: 'installed', neededBy: '2026-05-08' },
+    { id: 'soffit-fascia',    item: 'Soffit & Fascia install labor', vendor: 'Robbins Siding & Guttering', cost: 4834, status: 'installed', neededBy: '2026-05-08' },
+    { id: 'downspouts',       item: 'Downspouts (bill pending)', vendor: 'Robbins Siding & Guttering', cost: 0, status: 'ordered', neededBy: '2026-06-30' },
+    { id: 'garage-door',      item: 'Garage door', vendor: 'Farmer Garage Door', cost: 5400, status: 'ordered', neededBy: '2026-07-01' },
+    { id: 'plumbing-shower',  item: 'Plumbing materials — fiberglass shower (upstairs bath add-on)', vendor: 'Ferguson', cost: 950, status: 'ordered', neededBy: '2026-06-25' },
   ],
   '326': []  // populated from the 330 template just below
 };
@@ -1874,26 +1876,28 @@ function benchmarkBlock(phases, project) {
 // ─── MATERIALS STATUS ─────────────────────────────────────────
 const MAT_STATUS_ORDER = ['not-ordered','bid-in','ordered','on-site','installed'];
 
-// Merge stored per-item overrides (materials_<project>) over the base MATERIALS.
+// Merge stored per-item overrides over the base MATERIALS. Overrides are keyed by
+// the stable item `id` (NOT array index), so seed inserts/removals don't shift
+// saved edits. `_i` is still exposed for any positional internal use.
 function getMaterials(project) {
   const base = MATERIALS[project] || [];
   const ov = S.get('materials_' + project, {});
-  return base.map((m, i) => ({ ...m, ...(ov[i] || {}), _i: i }));
+  return base.map((m, i) => ({ ...m, ...(ov[m.id] || {}), _i: i }));
 }
 
-function saveMaterialField(project, idx, field, value) {
+function saveMaterialField(project, id, field, value) {
   const ov = S.get('materials_' + project, {});
-  ov[idx] = ov[idx] || {};
-  ov[idx][field] = field === 'cost' ? (parseFloat(value) || 0) : value;
+  ov[id] = ov[id] || {};
+  ov[id][field] = field === 'cost' ? (parseFloat(value) || 0) : value;
   S.set('materials_' + project, ov);
   renderMaterials(project);
 }
 
-function cycleMaterialStatus(project, idx) {
+function cycleMaterialStatus(project, id) {
   if (!editMode) return;
-  const cur = getMaterials(project)[idx]?.status;
+  const cur = getMaterials(project).find(m => m.id === id)?.status;
   const next = MAT_STATUS_ORDER[(MAT_STATUS_ORDER.indexOf(cur) + 1) % MAT_STATUS_ORDER.length];
-  saveMaterialField(project, idx, 'status', next);
+  saveMaterialField(project, id, 'status', next);
 }
 
 // ── QB vendor matching: tie live GL spend to material vendors by name ──
@@ -2258,7 +2262,7 @@ function renderMaterials(project) {
     const ph = categorizePhase(m.vendor, m.item);
     if (!rows[ph]) return;
     let key = vendorKeyMatch(m.vendor, Object.keys(rows[ph]));
-    if (!key) { key = normVendor(m.vendor) || ('m' + m._i); rows[ph][key] = rows[ph][key] || blank(m.vendor); }
+    if (!key) { key = normVendor(m.vendor) || ('m-' + m.id); rows[ph][key] = rows[ph][key] || blank(m.vendor); }
     const row = rows[ph][key];
     if (m.item) row.label = m.item;
     if (m.status) row.status = m.status;
