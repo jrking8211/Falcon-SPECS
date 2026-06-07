@@ -291,6 +291,7 @@
   <div id="todo-330"></div>
   <div id="projdetail-330"></div>
   <div id="phasebudget-330"></div>
+  <div id="bids-330"></div>
   <div id="materials-330"></div>
   <div id="finishes-330"></div>
   <div class="card">
@@ -349,6 +350,7 @@
   <div id="todo-326"></div>
   <div id="projdetail-326"></div>
   <div id="phasebudget-326"></div>
+  <div id="bids-326"></div>
   <div id="loan-326"></div>
   <div id="materials-326"></div>
   <div id="finishes-326"></div>
@@ -559,7 +561,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -668,8 +670,8 @@ function handleFirestoreUpdate(key) {
   else if (key === 'budget_326')      { renderBudget('326'); renderProjectDetail('326'); }
   else if (key === 'qb_balance_330')  { renderBudget('330'); renderProjectDetail('330'); }
   else if (key === 'qb_balance_326')  { renderBudget('326'); renderProjectDetail('326'); }
-  else if (key === 'gl_330')          { renderPhaseBudget('330'); renderBudget('330'); }
-  else if (key === 'gl_326')          { renderPhaseBudget('326'); renderBudget('326'); }
+  else if (key === 'gl_330')          { renderPhaseBudget('330'); renderBudget('330'); renderBids('330'); }
+  else if (key === 'gl_326')          { renderPhaseBudget('326'); renderBudget('326'); renderBids('326'); }
   else if (key === 'phasestages_330') { renderStages('330'); renderPhaseBudget('330'); renderProjectDetail('330'); }
   else if (key === 'phasestages_326') { renderStages('326'); renderPhaseBudget('326'); renderProjectDetail('326'); }
   else if (key === 'phasebudget_330') { renderPhaseBudget('330'); renderBudget('330'); }
@@ -685,6 +687,7 @@ function handleFirestoreUpdate(key) {
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); renderTodos('330'); renderTodos('326'); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
   else if (key === 'todos')           { renderTodos('330'); renderTodos('326'); }
+  else if (key === 'bids')            { renderBids('330'); renderBids('326'); }
 }
 
 // ─── QB REAL DATA (from balance sheet pulled 2026-06-04) ────────
@@ -2964,6 +2967,124 @@ function checkTodoReminders(force) {
   } catch (e) { /* ignore */ }
 }
 
+// ─── BIDS & ESTIMATES (per project; bid-vs-actual vs QuickBooks) ──
+// Bids are added manually or by the nightly intake scan (status 'pending'
+// until confirmed). Each bid reconciles live against QB GL spend for its vendor.
+function getBids() { return S.get('bids', []); }
+
+// Compare a bid to live QB actual for that vendor. Returns {actual, variance, level, label}.
+function bidActualMeta(project, vendor, bidAmount) {
+  const glT = glVendorTotals(project);
+  const m = qbActualForVendor(vendor, glT);
+  if (!m || !m.total) return { actual: null, level: 'await', color: 'var(--text-muted)', label: 'Awaiting invoice' };
+  const actual = m.total;
+  const variance = Math.round((actual - bidAmount) * 100) / 100;
+  const tol = Math.max(250, bidAmount * 0.02);
+  if (Math.abs(variance) <= tol) return { actual, variance, level: 'on', color: 'var(--green)', label: 'On bid' };
+  if (variance > 0) return { actual, variance, level: 'over', color: 'var(--red)', label: 'Over by ' + fmt(variance) };
+  return { actual, variance, level: 'under', color: 'var(--blue)', label: 'Under by ' + fmt(Math.abs(variance)) };
+}
+
+function renderBids(project) {
+  const el = document.getElementById('bids-' + project);
+  if (!el) return;
+  const bids = getBids().filter(b => b.project === project);
+  const pending = bids.filter(b => b.status === 'pending');
+  const confirmed = bids.filter(b => b.status !== 'pending');
+  const phaseOpts = PHASE_ORDER.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  const totalBid = confirmed.reduce((s, b) => s + (Number(b.amount) || 0), 0);
+
+  const row = b => {
+    const meta = bidActualMeta(project, b.vendor, Number(b.amount) || 0);
+    const isPending = b.status === 'pending';
+    const fileLink = b.url ? ` · <a href="${b.url}" target="_blank" style="color:var(--blue);">file</a>` : (b.file ? ` · <span style="color:var(--text-muted);">${esc(b.file)}</span>` : '');
+    const actLine = meta.actual != null
+      ? `QB actual ${fmt(meta.actual)} · <span style="color:${meta.color};font-weight:700;">${meta.label}</span>`
+      : `<span style="color:${meta.color};">${meta.label}</span>`;
+    return `<div style="background:var(--surface2);border-left:3px solid ${isPending ? 'var(--orange)' : meta.color};border-radius:6px;padding:10px 12px;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap;">
+        <div style="font-weight:700;font-size:0.9rem;">${esc(b.vendor || 'Vendor TBD')} <span style="font-weight:400;color:var(--text-muted);font-size:0.8rem;">— ${esc(b.trade || b.phase || '')}</span></div>
+        <div style="font-weight:800;font-size:0.95rem;">${fmt(Number(b.amount) || 0)}</div>
+      </div>
+      <div style="font-size:0.72rem;color:var(--text-muted);margin-top:3px;">
+        ${esc(b.phase || '')}${b.date ? ' · ' + esc(b.date) : ''}${fileLink}<br>${actLine}
+      </div>
+      ${isPending ? `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+        <span style="font-size:0.66rem;background:var(--orange);color:#10242e;padding:2px 7px;border-radius:4px;font-weight:700;">⚠ REVIEW${b.confidence === 'low' ? ' (low confidence)' : ''}</span>
+        <button class="btn btn-primary btn-sm" onclick="confirmBid('${b.id}')">✓ Confirm</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteBid('${b.id}')">✕ Discard</button>
+      </div>` : `<div style="margin-top:6px;"><button class="btn btn-danger btn-sm" onclick="deleteBid('${b.id}')">✕</button></div>`}
+    </div>`;
+  };
+
+  const listHtml = (pending.length || confirmed.length)
+    ? (pending.length ? `<div style="font-size:0.7rem;color:var(--orange);font-weight:700;margin:4px 0 6px;text-transform:uppercase;letter-spacing:0.04em;">Needs review (${pending.length})</div>` + pending.map(row).join('') : '')
+      + (confirmed.length ? `<div style="font-size:0.7rem;color:var(--text-muted);margin:12px 0 6px;text-transform:uppercase;letter-spacing:0.04em;">Tracked bids (${confirmed.length})</div>` + confirmed.map(row).join('') : '')
+    : '<div class="empty-state" style="padding:18px;">No bids yet — add one below, or drop a bid PDF in this project\'s intake folder and the nightly scan will pull it in.</div>';
+
+  el.innerHTML = `
+  <div class="card">
+    <div class="section-header">
+      <div class="card-title">Bids &amp; Estimates</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        ${pending.length ? `<span class="badge" style="background:var(--orange);color:#10242e;">${pending.length} to review</span>` : ''}
+        <span class="badge badge-gray">${confirmed.length} bid${confirmed.length === 1 ? '' : 's'} · ${fmt(totalBid)}</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">
+      <div style="flex:2;min-width:150px;"><div class="s-lbl" style="margin-bottom:4px;">Vendor</div><input id="bid-vendor-${project}" class="mat-input" placeholder="e.g. Witt Building Supply" style="width:100%;"></div>
+      <div style="flex:2;min-width:140px;"><div class="s-lbl" style="margin-bottom:4px;">Trade / item</div><input id="bid-trade-${project}" class="mat-input" placeholder="e.g. Roof trusses" style="width:100%;"></div>
+      <div style="flex:2;min-width:150px;"><div class="s-lbl" style="margin-bottom:4px;">Phase</div><select id="bid-phase-${project}" class="mat-input" style="width:100%;">${phaseOpts}</select></div>
+      <div style="min-width:110px;"><div class="s-lbl" style="margin-bottom:4px;">Bid amount</div><input id="bid-amount-${project}" type="number" class="alloc-input" placeholder="0" style="width:100%;"></div>
+      <button class="btn btn-primary btn-sm" onclick="addBid('${project}')">+ Add Bid</button>
+    </div>
+    <div>${listHtml}</div>
+    <div style="font-size:0.68rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Bid-vs-actual compares each bid to total QuickBooks spend for that vendor. Tolerance ±2% (or $250) = “on bid.”</div>
+  </div>`;
+}
+
+function addBid(project) {
+  const v = document.getElementById('bid-vendor-' + project).value.trim();
+  const trade = document.getElementById('bid-trade-' + project).value.trim();
+  const phase = document.getElementById('bid-phase-' + project).value;
+  const amount = parseFloat(document.getElementById('bid-amount-' + project).value) || 0;
+  if (!v) { toast('Enter a vendor.', 'error'); return; }
+  if (amount <= 0) { toast('Enter the bid amount.', 'error'); return; }
+  const bids = getBids();
+  bids.push({
+    id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    project, vendor: v, trade, phase, amount,
+    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    status: 'confirmed', source: 'manual', createdAt: new Date().toISOString()
+  });
+  S.set('bids', bids);
+  document.getElementById('bid-vendor-' + project).value = '';
+  document.getElementById('bid-trade-' + project).value = '';
+  document.getElementById('bid-amount-' + project).value = '';
+  renderBids(project);
+  toast(`Bid added: ${v}`);
+}
+
+function confirmBid(id) {
+  const bids = getBids();
+  const b = bids.find(x => x.id === id);
+  if (!b) return;
+  b.status = 'confirmed';
+  b.confirmedAt = new Date().toISOString();
+  S.set('bids', bids);
+  renderBids(b.project);
+  toast('Bid confirmed');
+}
+
+function deleteBid(id) {
+  const bids = getBids();
+  const b = bids.find(x => x.id === id);
+  const proj = b ? b.project : null;
+  if (b && b.status !== 'pending' && !confirm('Delete this bid?')) return;
+  S.set('bids', bids.filter(x => x.id !== id));
+  if (proj) renderBids(proj);
+}
+
 function init() {
   initGate();
   initCollapse();
@@ -2978,6 +3099,7 @@ function init() {
   renderFinishes('330'); renderFinishes('326');
   renderLoan('326');
   renderTodos('330'); renderTodos('326');
+  renderBids('330'); renderBids('326');
   checkTodoReminders(false);
   refreshEmployeeSelects();
   refreshProjectDropdown();
