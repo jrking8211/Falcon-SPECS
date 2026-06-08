@@ -2719,24 +2719,59 @@ function renderMaterials(project) {
   const rows = {}; PHASES.forEach(p => rows[p] = {});
   const blank = (vendor) => ({ vendor, label: '', est: 0, estSrc: '', actual: 0, status: '', neededBy: '', _i: null, _bidId: null });
 
-  // 1. GL actuals → seed a row per phase + vendor (this is the source of truth for "what landed where").
+  // 1. GL actuals → collect the individual payments per phase + vendor.
+  const glAmts = {}; // phase -> vendorKey -> { name, amts:[] }
   glRows.forEach(r => {
     const ph = categorizePhase(r.payee, r.memo);
     if (!rows[ph]) return;
     const name = (r.payee || '').trim(); const key = normVendor(name);
     if (!key) return;
-    (rows[ph][key] = rows[ph][key] || blank(name)).actual += Number(r.amount) || 0;
+    const pv = (glAmts[ph] = glAmts[ph] || {});
+    (pv[key] = pv[key] || { name, amts: [] }).amts.push(Number(r.amount) || 0);
   });
 
-  // 2. Bids → estimate overlay, matched into the bid's phase + vendor.
+  // 2. Bids → group by phase + matched vendor key.
+  const bidGroups = {}; // phase -> vendorKey -> [bids]
   bids.forEach(b => {
     if (!rows[b.phase]) return;
-    let key = vendorKeyMatch(b.vendor, Object.keys(rows[b.phase]));
-    if (!key) { key = normVendor(b.vendor) || ('bid' + b.id); rows[b.phase][key] = rows[b.phase][key] || blank(b.vendor); }
-    const row = rows[b.phase][key];
-    row.est = Number(b.amount) || 0; row.estSrc = 'bid'; row._bidId = b.id;
-    if (b.trade) row.label = row.label || b.trade;
-    if (!row.vendor) row.vendor = b.vendor;
+    const key = vendorKeyMatch(b.vendor, Object.keys(glAmts[b.phase] || {})) || normVendor(b.vendor) || ('bid' + b.id);
+    const pv = (bidGroups[b.phase] = bidGroups[b.phase] || {});
+    (pv[key] = pv[key] || []).push(b);
+  });
+
+  // 3. Build the rows. ONE vendor with MULTIPLE bids in a phase splits into a
+  // line per bid (so an unpaid item shows its own "Pending" line instead of
+  // collapsing into a paid one) — each GL payment is matched to the closest bid
+  // by amount; anything that doesn't match a bid stays on a plain vendor line.
+  PHASES.forEach(ph => {
+    const glPV = glAmts[ph] || {};
+    const bidPV = bidGroups[ph] || {};
+    new Set([...Object.keys(glPV), ...Object.keys(bidPV)]).forEach(key => {
+      const gl = glPV[key];
+      const name = gl ? gl.name : (bidPV[key] && bidPV[key][0] ? bidPV[key][0].vendor : '');
+      const amts = gl ? gl.amts.slice() : [];
+      const list = bidPV[key] || [];
+      if (list.length >= 2) {
+        const bidRows = list.map(b => {
+          const r = blank(name);
+          r.est = Number(b.amount) || 0; r.estSrc = 'bid'; r._bidId = b.id; r.label = b.trade || ''; r.actual = 0;
+          return r;
+        });
+        let generic = 0;
+        amts.forEach(a => {
+          let best = null, bd = Infinity;
+          bidRows.forEach(br => { const d = Math.abs(a - br.est); if (d < bd && d <= (br.est || 0) * 0.12) { bd = d; best = br; } });
+          if (best) best.actual += a; else generic += a;
+        });
+        bidRows.forEach(br => { rows[ph][key + '#' + br._bidId] = br; });
+        if (generic > 0) { const r = blank(name); r.actual = generic; rows[ph][key] = r; }
+      } else {
+        const r = blank(name);
+        r.actual = amts.reduce((s, a) => s + a, 0);
+        if (list.length === 1) { const b = list[0]; r.est = Number(b.amount) || 0; r.estSrc = 'bid'; r._bidId = b.id; if (b.trade) r.label = b.trade; }
+        rows[ph][key] = r;
+      }
+    });
   });
 
   // 3. Manual lines → scope label, status, needed-by, and estimate when no bid.
