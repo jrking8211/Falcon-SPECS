@@ -1133,14 +1133,18 @@ function computePhases(project) {
     lastSync: gl?.lastSync || null,
     rows: PHASE_ORDER.map(ph => {
       const st = phaseStageStatus(project, ph);
+      const spent = Math.round((spentByPhase[ph] || 0) * 100) / 100;
+      // A phase with real QuickBooks spend is at least "In Progress" — don't show
+      // "Not started" once money has actually landed there.
+      const status = (st.status === 'pending' && spent > 0) ? 'active' : st.status;
       return {
         phase: ph,
         budget: phaseBudget(project, ph),
-        status: st.status,
+        status,
         stageDone: st.done,
         stageTotal: st.total,
         flag: PHASE_FLAGS[ph],
-        spent: Math.round((spentByPhase[ph] || 0) * 100) / 100
+        spent
       };
     })
   };
@@ -1278,9 +1282,13 @@ function renderStages(project) {
   const container = document.getElementById('stages-' + project);
   if (!container) return;
   const store = S.get('phasestages_' + project, {});
+  // Use the spend-aware status so a phase with QuickBooks spend shows "In Progress".
+  const statusByPhase = {};
+  computePhases(project).rows.forEach(r => { statusByPhase[r.phase] = r.status; });
   let totalDone = 0, totalStages = 0;
   container.innerHTML = PHASE_ORDER.map((ph, pi) => {
-    const st = phaseStageStatus(project, ph);
+    const base = phaseStageStatus(project, ph);
+    const st = { done: base.done, total: base.total, status: statusByPhase[ph] || base.status };
     totalDone += st.done; totalStages += st.total;
     const color = PHASE_STATUS_COLOR[st.status];
     const stagesHtml = PHASE_STAGES[ph].map((name, si) => {
