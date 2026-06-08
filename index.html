@@ -599,9 +599,11 @@
 <div class="modal-overlay" id="emp-modal" style="display:none;">
   <div class="modal" style="width:340px;">
     <h2>Add Employee</h2>
-    <p>Set name and hourly rate</p>
+    <p>Set name, hourly rate, and QuickBooks ID</p>
     <input class="emp-input" id="emp-name" type="text" placeholder="Full Name" autocomplete="off">
     <input class="emp-input" id="emp-rate" type="number" placeholder="Hourly Rate (e.g. 22.00)" min="0" step="0.01">
+    <input class="emp-input" id="emp-qbid" type="text" placeholder="QuickBooks Employee ID (e.g. 1010)" autocomplete="off">
+    <div style="font-size:0.68rem;color:var(--text-muted);text-align:left;margin:2px 2px 6px;">Their QuickBooks employee ID — so their time posts to the right person. Find it in QuickBooks under that employee, or ask Claude to look it up.</div>
     <div style="display:flex;gap:8px;margin-top:4px;">
       <button class="btn btn-primary" style="flex:1;" onclick="saveEmployee()">Save</button>
       <button class="btn btn-secondary" style="flex:1;" onclick="document.getElementById('emp-modal').style.display='none'">Cancel</button>
@@ -1475,6 +1477,11 @@ async function pushTimeEntry(entry) {
   entry.minutesPart     = totalMin % 60;             // QB "Minutes" field, e.g. 30
   entry.durationHHMM    = String(entry.hoursWhole).padStart(2,'0') + ':' + String(entry.minutesPart).padStart(2,'0'); // "02:30"
 
+  // QuickBooks employee ID — so Make can map the time to the right person
+  // directly (no fragile name-based if() formula).
+  const empRec = getEmployees().find(e => e.name === entry.employee);
+  entry.qbEmployeeId = (empRec && empRec.qbId) ? String(empRec.qbId) : '';
+
   // Optimistic local append so the user sees their entry immediately.
   S.setLocal('timelogs', mergeTimelogs(S.get('timelogs', []), entry));
   renderMyEntries();
@@ -1924,6 +1931,7 @@ const csvQ = s => `"${String(s).replace(/"/g,'""')}"`;
 function showAddEmployee() {
   document.getElementById('emp-name').value = '';
   document.getElementById('emp-rate').value = '';
+  document.getElementById('emp-qbid').value = '';
   document.getElementById('emp-error').textContent = '';
   document.getElementById('emp-modal').style.display = 'flex';
 }
@@ -1931,11 +1939,13 @@ function showAddEmployee() {
 function saveEmployee() {
   const name = document.getElementById('emp-name').value.trim();
   const rate = parseFloat(document.getElementById('emp-rate').value) || 0;
+  const qbId = document.getElementById('emp-qbid').value.trim();
   const err  = document.getElementById('emp-error');
   if (!name)               { err.textContent = 'Name is required.'; return; }
+  if (!qbId)               { err.textContent = 'QuickBooks Employee ID is required (so their time posts to the right person).'; return; }
   const emps = getEmployees();
   if (emps.find(e => e.name.toLowerCase() === name.toLowerCase())) { err.textContent = 'Employee already exists.'; return; }
-  emps.push({ name, hourlyRate: rate });
+  emps.push({ name, hourlyRate: rate, qbId });
   S.set('employees', emps);
   document.getElementById('emp-modal').style.display = 'none';
   refreshEmployeeSelects();
@@ -1949,10 +1959,11 @@ function renderEmployeeList() {
   const emps = getEmployees();
   if (!emps.length) { container.innerHTML = '<div class="empty-state">No employees yet. Click "+ Add Employee" above.</div>'; return; }
   container.innerHTML = `<div class="table-wrap"><table class="data-table">
-    <thead><tr><th>Name</th><th>Hourly Rate</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Hourly Rate</th><th>QuickBooks ID</th><th></th></tr></thead>
     <tbody>${emps.map((e,i)=>`<tr>
       <td>${e.name}</td>
       <td>${e.hourlyRate ? fmt(e.hourlyRate)+'/hr' : '—'}</td>
+      <td>${e.qbId ? esc(String(e.qbId)) : '<span style="color:var(--red);">missing — add it</span>'}</td>
       <td><button onclick="removeEmployee(${i})" class="btn btn-danger btn-sm">Remove</button></td>
     </tr>`).join('')}</tbody>
   </table></div>`;
@@ -3309,8 +3320,8 @@ function openPhotoModal(url, caption, date) {
 function seedEmployees() {
   if (S.get('employees', []).length > 0) return;
   const qbEmployees = [
-    { name: 'Thomas K. Smith', pin: '1010', hourlyRate: 36.06 },
-    { name: 'Frank Hester',    pin: '1306', hourlyRate: 20.00 }
+    { name: 'Thomas K. Smith', pin: '1010', qbId: '1010', hourlyRate: 36.06 },
+    { name: 'Frank Hester',    pin: '1306', qbId: '1306', hourlyRate: 20.00 }
   ];
   // Use setLocal only — Firestore onSnapshot will provide real data if it exists
   S.setLocal('employees', qbEmployees);
