@@ -28,7 +28,8 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 
-    header { background: var(--navy); border-bottom: 3px solid var(--gold); padding: 10px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
+    .topbar { position: sticky; top: 0; z-index: 50; }
+    header { background: var(--navy); border-bottom: 3px solid var(--gold); padding: 10px 24px; display: flex; align-items: center; justify-content: space-between; }
     .logo-img { height: 58px; width: auto; display: block; border-radius: 7px; }
     .logo-sub { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; letter-spacing: 1px; text-transform: uppercase; }
     .sync-btn { background: var(--orange); color: var(--navy); border: none; padding: 8px 16px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 0.82rem; letter-spacing: 0.5px; }
@@ -281,6 +282,7 @@
   </div>
 </div>
 
+<div class="topbar">
 <header>
   <img src="logo.png?v=2" alt="Falcon Development" class="logo-img">
   <div style="display:flex;align-items:center;gap:10px;">
@@ -289,14 +291,14 @@
     <button class="sync-btn" style="background:var(--surface2);color:var(--text);" onclick="lockSite()" title="Lock dashboard">🔒</button>
   </div>
 </header>
-<div id="quicknav-panel" class="quicknav-panel" style="display:none;"></div>
-
 <div class="tabs">
   <div class="tab active" onclick="switchTab('p330')">330 Roddy Branch</div>
   <div class="tab" onclick="switchTab('p326')">326 Roddy Branch</div>
   <div class="tab" onclick="switchTab('timelog')">⏱ Time Log</div>
   <div class="tab" onclick="requireAdmin('admin')">⚙ Admin</div>
 </div>
+</div>
+<div id="quicknav-panel" class="quicknav-panel" style="display:none;"></div>
 
 <!-- 330 RODDY BRANCH -->
 <div class="view active" id="view-p330">
