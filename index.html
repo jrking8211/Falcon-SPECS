@@ -1452,7 +1452,21 @@ function submitTimeLog() {
 }
 
 // Shared: save a finished time entry + fire the QB webhook (used by manual form AND the time clock).
-function pushTimeEntry(entry) {
+// De-dupe a timelogs array by entry id (last occurrence wins).
+function mergeTimelogs(base, entry) {
+  const seen = new Set();
+  const out = [];
+  for (const l of [...(base || []), entry]) {
+    if (!l) continue;
+    const key = l.id != null ? String(l.id) : null;
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    out.push(l);
+  }
+  return out;
+}
+
+async function pushTimeEntry(entry) {
   // QuickBooks Time Activity wants whole Hours + Minutes (not decimal hours),
   // so send explicit duration fields the Make.com scenario can map directly.
   const totalMin = Math.round((entry.hours || 0) * 60);
@@ -1460,15 +1474,38 @@ function pushTimeEntry(entry) {
   entry.hoursWhole      = Math.floor(totalMin / 60); // QB "Hours" field, e.g. 2
   entry.minutesPart     = totalMin % 60;             // QB "Minutes" field, e.g. 30
   entry.durationHHMM    = String(entry.hoursWhole).padStart(2,'0') + ':' + String(entry.minutesPart).padStart(2,'0'); // "02:30"
-  const logs = S.get('timelogs', []);
-  logs.push(entry);
-  S.set('timelogs', logs);
-  // Send to Make.com webhook → creates QB Time Activity instantly
+
+  // Optimistic local append so the user sees their entry immediately.
+  S.setLocal('timelogs', mergeTimelogs(S.get('timelogs', []), entry));
+  renderMyEntries();
+
+  // Send to Make.com webhook → creates QB Time Activity instantly.
   fetch('https://hook.us2.make.com/4ozhujldkbtd4266f5pekrdlfcmjqbhh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(entry)
   }).catch(err => console.warn('Webhook failed:', err));
+
+  // Persist with an ATOMIC append so a simultaneous clock-out on another
+  // device can't overwrite the shared list. onSnapshot then reconciles local.
+  if (db && FS_KEYS.includes('timelogs')) {
+    try {
+      await db.collection('dashboard').doc('timelogs')
+        .set({ value: firebase.firestore.FieldValue.arrayUnion(entry) }, { merge: true });
+    } catch (err) {
+      console.warn('arrayUnion append failed, falling back to read-merge-write:', err);
+      try {
+        const snap = await db.collection('dashboard').doc('timelogs').get();
+        const serverArr = snap.exists ? (snap.data().value || []) : [];
+        S.set('timelogs', mergeTimelogs(serverArr, entry));
+      } catch (e2) {
+        S.set('timelogs', mergeTimelogs(S.get('timelogs', []), entry));
+      }
+    }
+  } else {
+    // No Firestore (offline/local) — keep the local-only merge.
+    S.setLocal('timelogs', mergeTimelogs(S.get('timelogs', []), entry));
+  }
   renderMyEntries();
 }
 
