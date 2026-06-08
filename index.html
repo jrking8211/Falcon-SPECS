@@ -1453,6 +1453,13 @@ function submitTimeLog() {
 
 // Shared: save a finished time entry + fire the QB webhook (used by manual form AND the time clock).
 function pushTimeEntry(entry) {
+  // QuickBooks Time Activity wants whole Hours + Minutes (not decimal hours),
+  // so send explicit duration fields the Make.com scenario can map directly.
+  const totalMin = Math.round((entry.hours || 0) * 60);
+  entry.durationMinutes = totalMin;                 // total minutes, e.g. 150
+  entry.hoursWhole      = Math.floor(totalMin / 60); // QB "Hours" field, e.g. 2
+  entry.minutesPart     = totalMin % 60;             // QB "Minutes" field, e.g. 30
+  entry.durationHHMM    = String(entry.hoursWhole).padStart(2,'0') + ':' + String(entry.minutesPart).padStart(2,'0'); // "02:30"
   const logs = S.get('timelogs', []);
   logs.push(entry);
   S.set('timelogs', logs);
@@ -1486,6 +1493,7 @@ function onClockEmployeeChange() {
   const emp = document.getElementById('tl-clock-employee').value;
   S.setLocal('last_clock_emp', emp);
   renderClock();
+  renderMyEntries();
 }
 
 // Change the project / cost code WHILE clocked in (fixes a wrong selection
@@ -1720,7 +1728,8 @@ function adminClockOut(emp) {
 }
 
 function renderMyEntries() {
-  const emp = document.getElementById('tl-employee')?.value;
+  // Use whichever name is selected — clock card takes priority, then the manual form.
+  const emp = (document.getElementById('tl-clock-employee')?.value) || (document.getElementById('tl-employee')?.value);
   const container = document.getElementById('tl-my-entries');
   if (!container) return;
   if (!emp) { container.innerHTML = '<div class="empty-state">Select your name above.</div>'; return; }
