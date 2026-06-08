@@ -152,6 +152,17 @@
     .btn-danger { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
     .btn-danger:hover { background: rgba(239,68,68,0.25); }
     .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+    /* Time-clock big buttons */
+    .clock-btn { width: 100%; border: none; border-radius: 12px; padding: 20px; font-size: 1.25rem; font-weight: 800; letter-spacing: 0.5px; cursor: pointer; transition: all 0.15s; text-transform: uppercase; }
+    .clock-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .clock-in  { background: var(--green); color: #04210f; }
+    .clock-in:not(:disabled):hover  { filter: brightness(1.08); }
+    .clock-out { background: var(--red); color: #fff; }
+    .clock-out:hover { filter: brightness(1.08); }
+    .clock-status { background: rgba(34,197,94,0.10); border: 1px solid rgba(34,197,94,0.35); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+    .clock-elapsed { font-size: 2rem; font-weight: 800; color: var(--green); font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .lunch-btn { flex: 1; min-width: 92px; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 12px 10px; font-weight: 700; font-size: 0.9rem; cursor: pointer; }
+    .lunch-btn:hover { border-color: var(--gold); color: var(--gold); }
 
     .data-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
     .data-table th { text-align: left; padding: 10px 12px; color: var(--text-muted); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
@@ -429,8 +440,27 @@
 
 <!-- TIME LOG -->
 <div class="view" id="view-timelog">
+  <div class="card" id="tl-clock-card">
+    <div class="card-title">⏱ Time Clock</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Your Name</label>
+        <select id="tl-clock-employee" onchange="onClockEmployeeChange()"><option value="">Select Employee…</option></select>
+      </div>
+      <div class="form-group">
+        <label>Project</label>
+        <select id="tl-clock-project" onchange="renderClock()"></select>
+      </div>
+      <div class="form-group">
+        <label>Cost Code</label>
+        <select id="tl-clock-costcode" onchange="renderClock()"><option value="">Select Cost Code…</option></select>
+      </div>
+    </div>
+    <div id="tl-clock-body"></div>
+  </div>
+
   <div class="card">
-    <div class="card-title">Log Your Time</div>
+    <div class="card-title">Log Your Time <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted);font-size:0.72rem;">— manual entry / corrections</span></div>
     <div class="form-grid">
       <div class="form-group">
         <label>Your Name</label>
@@ -584,7 +614,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids','ap_330','ap_326'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','active_punches','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids','ap_330','ap_326'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -711,6 +741,7 @@ function handleFirestoreUpdate(key) {
   else if (key === 'permits')         { renderProjectDetail('330'); renderProjectDetail('326'); }
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); renderTodos('330'); renderTodos('326'); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
+  else if (key === 'active_punches')  { renderClock(); }
   else if (key === 'todos')           { renderTodos('330'); renderTodos('326'); }
   else if (key === 'bids')            { renderBids('330'); renderBids('326'); }
 }
@@ -1361,6 +1392,8 @@ function refreshEmployeeSelects() {
   const opts = emps.map(e => `<option value="${esc(e.name)}">${e.name}</option>`).join('');
   const tlEmp = document.getElementById('tl-employee');
   if (tlEmp) { const v = tlEmp.value; tlEmp.innerHTML = '<option value="">Select Employee…</option>' + opts; tlEmp.value = v; }
+  const clEmp = document.getElementById('tl-clock-employee');
+  if (clEmp) { const v = clEmp.value || S.get('last_clock_emp', ''); clEmp.innerHTML = '<option value="">Select Employee…</option>' + opts; clEmp.value = v; }
   const fe = document.getElementById('filter-employee');
   if (fe) { const v = fe.value; fe.innerHTML = '<option value="">All Employees</option>' + opts; fe.value = v; }
 }
@@ -1399,16 +1432,7 @@ function submitTimeLog() {
     amount,
     description: desc
   };
-  const logs = S.get('timelogs', []);
-  logs.push(entry);
-  S.set('timelogs', logs);
-
-  // Send to Make.com webhook → creates QB Time Activity instantly
-  fetch('https://hook.us2.make.com/4ozhujldkbtd4266f5pekrdlfcmjqbhh', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(entry)
-  }).catch(err => console.warn('Webhook failed:', err));
+  pushTimeEntry(entry);
 
   document.getElementById('tl-start').value    = '';
   document.getElementById('tl-end').value      = '';
@@ -1417,6 +1441,211 @@ function submitTimeLog() {
 
   toast(`✓ ${hours.toFixed(2)} hrs / ${fmt(amount)} logged for ${emp}`);
   renderMyEntries();
+}
+
+// Shared: save a finished time entry + fire the QB webhook (used by manual form AND the time clock).
+function pushTimeEntry(entry) {
+  const logs = S.get('timelogs', []);
+  logs.push(entry);
+  S.set('timelogs', logs);
+  // Send to Make.com webhook → creates QB Time Activity instantly
+  fetch('https://hook.us2.make.com/4ozhujldkbtd4266f5pekrdlfcmjqbhh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry)
+  }).catch(err => console.warn('Webhook failed:', err));
+  renderMyEntries();
+}
+
+// ─── TIME CLOCK (Clock In / Clock Out) ───────────────────────────
+// One-tap punch clock. The "open" punch for each employee lives in the
+// synced 'active_punches' doc, so an employee can clock in on their phone
+// and clock out later (even after closing the app or from another device).
+let clockTimer = null;
+const pad2 = n => String(n).padStart(2, '0');
+const localHM   = d => pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+const localYMD  = d => d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate());
+const time12    = d => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+function getActivePunches() { return S.get('active_punches', {}) || {}; }
+function getActivePunch(emp) { return getActivePunches()[emp] || null; }
+function fmtElapsed(ms) {
+  const s = Math.max(0, Math.floor(ms/1000));
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  return h + 'h ' + pad2(m) + 'm ' + pad2(sec) + 's';
+}
+
+function onClockEmployeeChange() {
+  const emp = document.getElementById('tl-clock-employee').value;
+  S.setLocal('last_clock_emp', emp);
+  renderClock();
+}
+
+function refreshClockDropdowns() {
+  const ps = document.getElementById('tl-clock-project');
+  if (ps) {
+    const active = getActiveProjects();
+    const v = ps.value;
+    ps.innerHTML = active.length ? active.map(p => `<option value="${esc(p.name)}">${p.name}</option>`).join('') : '<option value="">No active projects</option>';
+    if (v) ps.value = v;
+  }
+  const cs = document.getElementById('tl-clock-costcode');
+  if (cs) {
+    const v = cs.value;
+    cs.innerHTML = '<option value="">Select Cost Code…</option>' + COST_CODES.map(c => `<option value="${c.code}">${c.label}</option>`).join('');
+    if (v) cs.value = v;
+  }
+}
+
+function renderClock() {
+  const body = document.getElementById('tl-clock-body');
+  if (!body) return;
+  refreshClockDropdowns();
+  if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+
+  const empSel = document.getElementById('tl-clock-employee');
+  const projSel = document.getElementById('tl-clock-project');
+  const ccSel = document.getElementById('tl-clock-costcode');
+  const emp = empSel ? empSel.value.trim() : '';
+  const punch = emp ? getActivePunch(emp) : null;
+  const empRec = getEmployees().find(e => e.name === emp);
+  const rate = empRec && empRec.hourlyRate ? Number(empRec.hourlyRate) : 0;
+
+  // lock/unlock the selectors while clocked in
+  [projSel, ccSel].forEach(s => { if (s) s.disabled = !!punch; });
+
+  if (!emp) {
+    body.innerHTML = `<div class="empty-state" style="padding:24px;">Select your name to clock in.</div>`;
+    return;
+  }
+
+  if (punch) {
+    // CLOCKED IN — show live status + clock-out
+    if (projSel) projSel.value = punch.project;
+    if (ccSel)   ccSel.value   = punch.costCode;
+    const inDate = new Date(punch.clockInISO);
+    body.innerHTML = `
+      <div class="clock-status">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--green);font-weight:700;margin-bottom:4px;">🟢 Clocked in</div>
+        <div class="clock-elapsed" id="tl-elapsed">0h 00m 00s</div>
+        <div style="font-size:0.82rem;color:var(--text-muted);margin-top:6px;">
+          Since <strong style="color:var(--text);">${time12(inDate)}</strong> · ${esc(punch.project)} · ${esc(punch.costCodeLabel || punch.costCode)}${rate?` · $${rate.toFixed(2)}/hr`:''}
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>Work Description <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+        <input type="text" id="tl-clock-desc" placeholder="e.g. Drywall taping, framing…" value="${esc(punch.description||'')}">
+      </div>
+      <button class="clock-btn clock-out" onclick="clockOut()">■ Clock Out</button>`;
+    const tick = () => { const el = document.getElementById('tl-elapsed'); if (el) el.textContent = fmtElapsed(Date.now() - inDate.getTime()); };
+    tick();
+    clockTimer = setInterval(tick, 1000);
+  } else {
+    // NOT CLOCKED IN — show clock-in
+    const proj = projSel ? projSel.value : '';
+    const cc   = ccSel ? ccSel.value : '';
+    const ready = emp && proj && cc && rate > 0;
+    const why = !rate ? `<div style="font-size:0.78rem;color:var(--red);margin-bottom:10px;">No hourly rate on file for ${esc(emp)} — add it in Admin → Employees before clocking in.</div>`
+              : (!proj || !cc) ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px;">Pick a project and cost code, then clock in.</div>` : '';
+    body.innerHTML = `
+      ${why}
+      ${rate?`<div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:10px;">Rate: <strong style="color:var(--text);">$${rate.toFixed(2)}/hr</strong></div>`:''}
+      <button class="clock-btn clock-in" onclick="clockIn()" ${ready?'':'disabled'}>▶ Clock In</button>`;
+  }
+}
+
+function clockIn() {
+  const emp  = document.getElementById('tl-clock-employee').value.trim();
+  const proj = document.getElementById('tl-clock-project').value;
+  const cc   = document.getElementById('tl-clock-costcode').value;
+  const empRec = getEmployees().find(e => e.name === emp);
+  const rate = empRec && empRec.hourlyRate ? Number(empRec.hourlyRate) : 0;
+  if (!emp || !proj || !cc) { toast('Pick your name, project, and cost code first.', 'error'); return; }
+  if (rate <= 0) { toast('No hourly rate on file for this employee.', 'error'); return; }
+  if (getActivePunch(emp)) { toast(`${emp} is already clocked in.`, 'error'); return; }
+  const now = new Date();
+  const punches = getActivePunches();
+  punches[emp] = {
+    employee: emp,
+    project: proj,
+    costCode: cc,
+    costCodeLabel: COST_CODES.find(c => c.code === cc)?.label || cc,
+    hourlyRate: rate,
+    clockInISO: now.toISOString(),
+    startTime: localHM(now),
+    date: localYMD(now)
+  };
+  S.set('active_punches', punches);
+  toast(`▶ ${emp} clocked in at ${time12(now)}`);
+  renderClock();
+}
+
+// Clicking Clock Out asks about lunch first (per setup choice).
+function clockOut() {
+  const emp = document.getElementById('tl-clock-employee').value.trim();
+  const punch = getActivePunch(emp);
+  if (!punch) { renderClock(); return; }
+  // capture any description typed during the shift onto the punch (so it survives the lunch step)
+  const d = document.getElementById('tl-clock-desc');
+  if (d) { const p = getActivePunches(); if (p[emp]) { p[emp].description = d.value.trim(); S.setLocal('active_punches', p); } }
+  const grossMin = Math.round((Date.now() - new Date(punch.clockInISO).getTime()) / 60000);
+  const body = document.getElementById('tl-clock-body');
+  body.innerHTML = `
+    <div class="clock-status" style="background:rgba(201,162,39,0.08);border-color:rgba(201,162,39,0.35);">
+      <div style="font-weight:700;color:var(--gold);margin-bottom:4px;">Did you take a lunch break?</div>
+      <div style="font-size:0.82rem;color:var(--text-muted);">Worked ${fmtElapsed(grossMin*60000)} so far — pick a lunch length to subtract.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+      <button class="lunch-btn" onclick="finalizeClockOut(0)">No lunch</button>
+      <button class="lunch-btn" onclick="finalizeClockOut(30)">−30 min</button>
+      <button class="lunch-btn" onclick="finalizeClockOut(60)">−60 min</button>
+      <button class="lunch-btn" onclick="finalizeClockOutCustom()">Other…</button>
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="renderClock()">Cancel</button>`;
+}
+
+function finalizeClockOutCustom() {
+  const raw = prompt('Lunch break in minutes:', '45');
+  if (raw === null) return;
+  const n = parseInt(String(raw).replace(/[^0-9]/g, ''), 10);
+  if (isNaN(n) || n < 0) { toast('Enter a number of minutes.', 'error'); return; }
+  finalizeClockOut(n);
+}
+
+function finalizeClockOut(breakMin) {
+  const emp = document.getElementById('tl-clock-employee').value.trim();
+  const punch = getActivePunch(emp);
+  if (!punch) { renderClock(); return; }
+  const now = new Date();
+  const inDate = new Date(punch.clockInISO);
+  const grossHours = (now.getTime() - inDate.getTime()) / 3600000;
+  const netHours = grossHours - (breakMin || 0) / 60;
+  if (netHours <= 0) { toast('Lunch break is longer than the time worked — adjust and try again.', 'error'); renderClock(); return; }
+  const rate = Number(punch.hourlyRate) || 0;
+  const hours = Math.round(netHours * 100) / 100;
+  const amount = Math.round(hours * rate * 100) / 100;
+  const entry = {
+    id: Date.now(),
+    employee: emp,
+    date: punch.date,
+    project: punch.project,
+    costCode: punch.costCode,
+    costCodeLabel: punch.costCodeLabel || (COST_CODES.find(c => c.code === punch.costCode)?.label) || punch.costCode,
+    startTime: punch.startTime,
+    endTime: localHM(now),
+    hours,
+    hourlyRate: rate,
+    amount,
+    description: punch.description || '',
+    breakMinutes: breakMin || 0,
+    source: 'clock'
+  };
+  // remove the open punch first, then file the entry
+  const punches = getActivePunches();
+  delete punches[emp];
+  S.set('active_punches', punches);
+  pushTimeEntry(entry);
+  toast(`■ ${emp} clocked out — ${hours.toFixed(2)} hrs / ${fmt(amount)}${breakMin?` (−${breakMin}m lunch)`:''}`);
+  renderClock();
 }
 
 function renderMyEntries() {
@@ -2669,6 +2898,7 @@ function switchTab(name) {
   const view = document.getElementById('view-'+name);
   if (view) view.classList.add('active');
   if (name==='admin') { renderAdminEntries(); renderBudgetEditor(); renderEmployeeList(); refreshEmployeeSelects(); }
+  if (name==='timelog') { refreshEmployeeSelects(); renderClock(); }
   if (typeof closeQuickNav === 'function') closeQuickNav();
 }
 
@@ -3315,6 +3545,7 @@ function init() {
   refreshEmployeeSelects();
   refreshProjectDropdown();
   refreshCostCodeDropdown();
+  renderClock();
   document.getElementById('sync-status').textContent =
     'QB sync ' + new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'});
 }
