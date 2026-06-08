@@ -512,6 +512,14 @@
 <div class="view" id="view-admin">
   <div class="card">
     <div class="section-header">
+      <div class="card-title">🟢 Currently Clocked In</div>
+      <button class="btn btn-secondary btn-sm" onclick="renderClockedIn()">Refresh</button>
+    </div>
+    <div id="admin-clocked-in"></div>
+  </div>
+
+  <div class="card">
+    <div class="section-header">
       <div class="card-title">All Time Entries</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-primary btn-sm" onclick="exportJournalCSV()">↓ Export QB Journal CSV</button>
@@ -741,7 +749,7 @@ function handleFirestoreUpdate(key) {
   else if (key === 'permits')         { renderProjectDetail('330'); renderProjectDetail('326'); }
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); renderTodos('330'); renderTodos('326'); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
-  else if (key === 'active_punches')  { renderClock(); }
+  else if (key === 'active_punches')  { renderClock(); renderClockedIn(); }
   else if (key === 'todos')           { renderTodos('330'); renderTodos('326'); }
   else if (key === 'bids')            { renderBids('330'); renderBids('326'); }
 }
@@ -1611,10 +1619,10 @@ function finalizeClockOutCustom() {
   finalizeClockOut(n);
 }
 
-function finalizeClockOut(breakMin) {
-  const emp = document.getElementById('tl-clock-employee').value.trim();
+function finalizeClockOut(breakMin, emp) {
+  emp = (emp || document.getElementById('tl-clock-employee').value).trim();
   const punch = getActivePunch(emp);
-  if (!punch) { renderClock(); return; }
+  if (!punch) { renderClock(); renderClockedIn(); return; }
   const now = new Date();
   const inDate = new Date(punch.clockInISO);
   const grossHours = (now.getTime() - inDate.getTime()) / 3600000;
@@ -1646,6 +1654,46 @@ function finalizeClockOut(breakMin) {
   pushTimeEntry(entry);
   toast(`■ ${emp} clocked out — ${hours.toFixed(2)} hrs / ${fmt(amount)}${breakMin?` (−${breakMin}m lunch)`:''}`);
   renderClock();
+  renderClockedIn();
+}
+
+// ─── ADMIN: who's clocked in right now ───────────────────────────
+let adminClockTimer = null;
+function renderClockedIn() {
+  const el = document.getElementById('admin-clocked-in');
+  if (!el) return;
+  if (adminClockTimer) { clearInterval(adminClockTimer); adminClockTimer = null; }
+  const punches = Object.values(getActivePunches()).sort((a,b) => new Date(a.clockInISO) - new Date(b.clockInISO));
+  // refresh the card title count if present
+  const titleEl = el.closest('.card')?.querySelector('.card-title');
+  if (titleEl) titleEl.innerHTML = `🟢 Currently Clocked In ${punches.length ? `<span style="color:var(--text-muted);font-weight:400;">· ${punches.length}</span>` : ''}`;
+  if (!punches.length) {
+    el.innerHTML = '<div class="empty-state" style="padding:20px;">No one is clocked in right now.</div>';
+    return;
+  }
+  el.innerHTML = `<div class="table-wrap"><table class="budget-line-table">
+    <thead><tr><th>Employee</th><th>Project</th><th>Cost Code</th><th>Since</th><th>Elapsed</th><th></th></tr></thead>
+    <tbody>${punches.map(p => `<tr>
+      <td><strong>${esc(p.employee)}</strong></td>
+      <td>${esc(p.project)}</td>
+      <td style="font-size:0.8rem;color:var(--text-muted);">${esc(p.costCodeLabel || p.costCode)}</td>
+      <td style="white-space:nowrap;">${time12(new Date(p.clockInISO))}</td>
+      <td><span class="adm-elapsed" data-in="${p.clockInISO}" style="color:var(--green);font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;">—</span></td>
+      <td style="text-align:right;white-space:nowrap;"><button class="btn btn-secondary btn-sm" data-emp="${esc(p.employee)}" onclick="adminClockOut(this.dataset.emp)">Clock Out</button></td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+  const tick = () => el.querySelectorAll('.adm-elapsed').forEach(s => { s.textContent = fmtElapsed(Date.now() - new Date(s.dataset.in).getTime()); });
+  tick();
+  adminClockTimer = setInterval(tick, 1000);
+}
+
+// Admin force clock-out (e.g. an employee who forgot to clock out).
+function adminClockOut(emp) {
+  if (!getActivePunch(emp)) { renderClockedIn(); return; }
+  const raw = prompt(`Clock out ${emp}.\nLunch break minutes to subtract (0 for none):`, '0');
+  if (raw === null) return;
+  const min = parseInt(String(raw).replace(/[^0-9]/g, ''), 10);
+  finalizeClockOut(isNaN(min) ? 0 : min, emp);
 }
 
 function renderMyEntries() {
@@ -2897,7 +2945,7 @@ function switchTab(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   const view = document.getElementById('view-'+name);
   if (view) view.classList.add('active');
-  if (name==='admin') { renderAdminEntries(); renderBudgetEditor(); renderEmployeeList(); refreshEmployeeSelects(); }
+  if (name==='admin') { renderAdminEntries(); renderBudgetEditor(); renderEmployeeList(); refreshEmployeeSelects(); renderClockedIn(); }
   if (name==='timelog') { refreshEmployeeSelects(); renderClock(); }
   if (typeof closeQuickNav === 'function') closeQuickNav();
 }
