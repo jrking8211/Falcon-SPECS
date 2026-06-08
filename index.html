@@ -449,11 +449,11 @@
       </div>
       <div class="form-group">
         <label>Project</label>
-        <select id="tl-clock-project" onchange="renderClock()"></select>
+        <select id="tl-clock-project" onchange="onClockJobChange()"></select>
       </div>
       <div class="form-group">
         <label>Cost Code</label>
-        <select id="tl-clock-costcode" onchange="renderClock()"><option value="">Select Cost Code…</option></select>
+        <select id="tl-clock-costcode" onchange="onClockJobChange()"><option value="">Select Cost Code…</option></select>
       </div>
     </div>
     <div id="tl-clock-body"></div>
@@ -1488,6 +1488,28 @@ function onClockEmployeeChange() {
   renderClock();
 }
 
+// Change the project / cost code WHILE clocked in (fixes a wrong selection
+// without losing the shift). Updates the open punch in place.
+function onClockJobChange() {
+  const emp = document.getElementById('tl-clock-employee').value.trim();
+  const punch = emp ? getActivePunch(emp) : null;
+  if (!punch) { renderClock(); return; }   // not clocked in → just refresh clock-in readiness
+  const proj = document.getElementById('tl-clock-project').value;
+  const cc   = document.getElementById('tl-clock-costcode').value;
+  if (!proj || !cc) { renderClock(); return; }
+  const punches = getActivePunches();
+  if (!punches[emp]) { renderClock(); return; }
+  const descEl = document.getElementById('tl-clock-desc');   // preserve any typed description
+  if (descEl) punches[emp].description = descEl.value.trim();
+  punches[emp].project = proj;
+  punches[emp].costCode = cc;
+  punches[emp].costCodeLabel = COST_CODES.find(c => c.code === cc)?.label || cc;
+  S.set('active_punches', punches);
+  toast(`Job updated → ${proj} · ${punches[emp].costCodeLabel}`);
+  renderClock();
+  renderClockedIn();
+}
+
 function refreshClockDropdowns() {
   const ps = document.getElementById('tl-clock-project');
   if (ps) {
@@ -1518,8 +1540,8 @@ function renderClock() {
   const empRec = getEmployees().find(e => e.name === emp);
   const rate = empRec && empRec.hourlyRate ? Number(empRec.hourlyRate) : 0;
 
-  // lock/unlock the selectors while clocked in
-  [projSel, ccSel].forEach(s => { if (s) s.disabled = !!punch; });
+  // selectors stay editable even while clocked in, so a wrong job can be corrected
+  [projSel, ccSel].forEach(s => { if (s) s.disabled = false; });
 
   if (!emp) {
     body.innerHTML = `<div class="empty-state" style="padding:24px;">Select your name to clock in.</div>`;
@@ -1538,6 +1560,7 @@ function renderClock() {
         <div style="font-size:0.82rem;color:var(--text-muted);margin-top:6px;">
           Since <strong style="color:var(--text);">${time12(inDate)}</strong> · ${esc(punch.project)} · ${esc(punch.costCodeLabel || punch.costCode)}${rate?` · $${rate.toFixed(2)}/hr`:''}
         </div>
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:6px;font-style:italic;">Wrong job? Just change the Project or Cost Code above — it updates your open punch.</div>
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label>Work Description <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
