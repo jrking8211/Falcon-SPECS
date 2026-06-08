@@ -3575,22 +3575,43 @@ function bidActualMeta(project, vendor, bidAmount, phase) {
   const rows = parseGLRows(S.get('gl_' + project, null)) || [];
   const toks = vendorTokens(vendor);
   const vnorm = normVendor(vendor);
-  let total = 0, n = 0;
+  const vmatch = (payee) => {
+    const pw = normVendor(payee).split(' ');
+    return toks.length ? toks.some(t => pw.includes(t)) : (vnorm.length >= 6 && normVendor(payee).includes(vnorm));
+  };
+  // This vendor's individual payments within the bid's phase.
+  const amts = [];
   rows.forEach(r => {
-    const payeeWords = normVendor(r.payee).split(' ');
-    const vmatch = toks.length ? toks.some(t => payeeWords.includes(t))
-                              : (vnorm.length >= 6 && normVendor(r.payee).includes(vnorm));
-    if (!vmatch) return;
-    if (phase && categorizePhase(r.payee, r.memo) !== phase) return;  // phase-scoped
-    total += Number(r.amount) || 0; n++;
+    if (!vmatch(r.payee)) return;
+    if (phase && categorizePhase(r.payee, r.memo) !== phase) return;
+    amts.push(Number(r.amount) || 0);
   });
-  if (!n) return { actual: null, level: 'await', color: 'var(--text-muted)', label: 'Awaiting invoice' };
-  total = Math.round(total * 100) / 100;
-  const variance = Math.round((total - bidAmount) * 100) / 100;
+  // Sibling bids sharing this vendor + phase. When there are several, each bid is
+  // judged against ITS OWN matched payment (by amount), not the lump-sum vendor
+  // total — otherwise an unpaid bid looks "under" and a paid one looks "over".
+  const siblingAmts = getBids()
+    .filter(b => b.project === project && b.phase === phase && b.status !== 'discarded' && vmatch(b.vendor))
+    .map(b => Number(b.amount) || 0);
+  let actual;
+  if (siblingAmts.length <= 1) {
+    actual = amts.reduce((s, a) => s + a, 0);                // single bid → all of the vendor's phase spend
+  } else {
+    const buckets = siblingAmts.map(amt => ({ amt, got: 0 }));
+    amts.forEach(a => {
+      let best = null, bd = Infinity;
+      buckets.forEach(bk => { const d = Math.abs(a - bk.amt); if (d < bd && d <= bk.amt * 0.12) { bd = d; best = bk; } });
+      if (best) best.got += a;
+    });
+    const mine = buckets.find(bk => bk.amt === bidAmount);
+    actual = mine ? mine.got : 0;
+  }
+  actual = Math.round(actual * 100) / 100;
+  if (actual === 0) return { actual: null, level: 'await', color: 'var(--text-muted)', label: 'Awaiting invoice' };
+  const variance = Math.round((actual - bidAmount) * 100) / 100;
   const tol = Math.max(250, bidAmount * 0.02);
-  if (Math.abs(variance) <= tol) return { actual: total, variance, level: 'on', color: 'var(--green)', label: 'On bid' };
-  if (variance > 0) return { actual: total, variance, level: 'over', color: 'var(--red)', label: 'Over by ' + fmt(variance) };
-  return { actual: total, variance, level: 'under', color: 'var(--blue)', label: 'Under by ' + fmt(Math.abs(variance)) };
+  if (Math.abs(variance) <= tol) return { actual, variance, level: 'on', color: 'var(--green)', label: 'On bid' };
+  if (variance > 0) return { actual, variance, level: 'over', color: 'var(--red)', label: 'Over by ' + fmt(variance) };
+  return { actual, variance, level: 'under', color: 'var(--blue)', label: 'Under by ' + fmt(Math.abs(variance)) };
 }
 
 function renderBids(project) {
