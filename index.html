@@ -1480,11 +1480,17 @@ async function pushTimeEntry(entry) {
   renderMyEntries();
 
   // Send to Make.com webhook → creates QB Time Activity instantly.
-  fetch('https://hook.us2.make.com/4ozhujldkbtd4266f5pekrdlfcmjqbhh', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(entry)
-  }).catch(err => console.warn('Webhook failed:', err));
+  // Defensive: only send when there's a real duration. A 0-minute payload makes
+  // QuickBooks throw "Invalid time duration" and deactivates the sync scenario.
+  if (totalMin >= 1) {
+    fetch('https://hook.us2.make.com/4ozhujldkbtd4266f5pekrdlfcmjqbhh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry)
+    }).catch(err => console.warn('Webhook failed:', err));
+  } else {
+    console.warn('Skipped webhook for zero-minute entry:', entry.id);
+  }
 
   // Persist with an ATOMIC append so a simultaneous clock-out on another
   // device can't overwrite the shared list. onSnapshot then reconciles local.
@@ -1696,6 +1702,14 @@ function finalizeClockOut(breakMin, emp) {
   const grossHours = (now.getTime() - inDate.getTime()) / 3600000;
   const netHours = grossHours - (breakMin || 0) / 60;
   if (netHours <= 0) { toast('Lunch break is longer than the time worked — adjust and try again.', 'error'); renderClock(); return; }
+  // Guard: never file a zero-minute entry. A blank/0 duration is rejected by
+  // QuickBooks and (with no error handler) deactivates the whole sync scenario.
+  if (Math.round(netHours * 60) < 1) {
+    const p = getActivePunches(); delete p[emp]; S.set('active_punches', p);
+    toast(`${emp} was clocked in under a minute — nothing recorded.`, 'error');
+    renderClock(); renderClockedIn();
+    return;
+  }
   const rate = Number(punch.hourlyRate) || 0;
   const hours = Math.round(netHours * 100) / 100;
   const amount = Math.round(hours * rate * 100) / 100;
