@@ -773,6 +773,11 @@ const PLAN_DATA = {
     sqftTotal: 2796,
     beds: 4, baths: 3,
     stories: '1.5',
+    mls: '#1343836',
+    listPrice: 775000,
+    listDate: '2026-06-08',   // MLS list date — days-on-market computes from this automatically
+    listingUrl: 'https://www.zillow.com/homedetails/326-Roddy-Branch-Rd-Rockford-TN-37853/345676770_zpid/',
+    listingDesc: 'New construction by Falcon Development, built on a floor plan similar to the neighboring 330 Roddy Branch. Oversized lot between Maryville and Knoxville with everything you need on the main floor. 4 bed / 3 full bath — 3 bedrooms on the main level plus a private upstairs bedroom or bonus room with its own full bath, ideal for guests, a home office, or extra living space. Open-concept layout flows from the living area into the kitchen and dining and out to the covered back porch for effortless indoor-outdoor entertaining. Country-style living just minutes from Pellissippi Parkway, with quick access to downtown Knoxville, Maryville, shopping and dining. Features: tile showers, high-end LVP throughout, fireplace, kitchen island, butler\'s pantry, and a separate laundry room.',
     targetCompletion: 'TBD — trails 330 (~Q4 2026)',
     currentPhase: 'Early stage',
     features: ['4th Bed + Full Bath Upstairs (Bonus)','9\' Ceilings Throughout','10\' Raised Ceiling – Great Room','Optional Tray Ceiling – Master','Covered Front Porch','Covered Back Deck','10\'×8\' Pella Lifestyle 4-Panel Slider','Dormer (2nd Floor)','Side-Entry Garage (Right)','Brick Veneer / Watertable','Board & Batten + Lap Siding','T&G Porch Ceiling','Crawlspace Foundation','9:12 Roof Pitch (Steeper)'],
@@ -1724,7 +1729,9 @@ function renderProjectDetail(project) {
         <div class="section-header">
           <div class="card-title">Comparable Sales &amp; Pricing</div>
           ${p.mls ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <span style="font-size:0.72rem;background:rgba(93,179,228,0.15);color:var(--blue);padding:2px 8px;border-radius:4px;font-weight:600;">MLS ${p.mls}</span>
+            ${p.listingUrl
+              ? `<a href="${p.listingUrl}" target="_blank" rel="noopener" title="View the public listing" style="font-size:0.72rem;background:rgba(93,179,228,0.15);color:var(--blue);padding:2px 8px;border-radius:4px;font-weight:600;text-decoration:none;">MLS ${p.mls} ↗</a>`
+              : `<span style="font-size:0.72rem;background:rgba(93,179,228,0.15);color:var(--blue);padding:2px 8px;border-radius:4px;font-weight:600;">MLS ${p.mls}</span>`}
             ${(() => { const dom = daysOnMarket(p); return dom !== null ? `<span style="font-size:0.72rem;color:var(--blue);font-weight:600;" title="Listed ${p.listDate}">● ${dom === 0 ? 'Listed today' : dom + ' day' + (dom === 1 ? '' : 's') + ' on market'}</span>` : ''; })()}
             ${(() => {
               const v = getListingViews(project);
