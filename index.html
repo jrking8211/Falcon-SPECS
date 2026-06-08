@@ -1639,7 +1639,8 @@ function setListingViews(project) {
     if (isNaN(n)) { alert('Please enter a number.'); return; }
     const s = S.get('listing_stats', {}) || {};
     const stamp = new Date().toISOString().slice(0, 10);
-    s[project] = { views: n, updated: stamp };
+    const prev = s[project] || {};
+    s[project] = { views: n, saves: prev.saves, updated: stamp, auto: false };  // manual override; keep last saves
     S.set('listing_stats', s);
     renderProjectDetail(project);
   });
@@ -1736,7 +1737,10 @@ function renderProjectDetail(project) {
             ${(() => { const dom = daysOnMarket(p); return dom !== null ? `<span style="font-size:0.72rem;color:var(--blue);font-weight:600;" title="Listed ${p.listDate}">● ${dom === 0 ? 'Listed today' : dom + ' day' + (dom === 1 ? '' : 's') + ' on market'}</span>` : ''; })()}
             ${(() => {
               const v = getListingViews(project);
-              return `<span onclick="setListingViews('${project}')" title="${v ? 'Updated ' + v.updated + ' — click to update' : 'Click to set listing views'}" style="font-size:0.72rem;color:${v ? 'var(--gold)' : 'var(--text-muted)'};font-weight:600;cursor:pointer;">👁 ${v ? v.views.toLocaleString() + ' views' : '+ views'}</span>`;
+              if (!v) return `<span onclick="setListingViews('${project}')" title="Click to set listing views" style="font-size:0.72rem;color:var(--text-muted);font-weight:600;cursor:pointer;">👁 + views</span>`;
+              const src = v.auto ? 'Auto-synced from Zillow · ' : '';
+              const saves = (typeof v.saves === 'number') ? ` · 🔖 ${v.saves.toLocaleString()}` : '';
+              return `<span onclick="setListingViews('${project}')" title="${src}Updated ${v.updated} — click to override" style="font-size:0.72rem;color:var(--gold);font-weight:600;cursor:pointer;">👁 ${v.views.toLocaleString()}${saves}</span>`;
             })()}
           </div>` : ''}
         </div>
