@@ -624,7 +624,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','active_punches','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids','ap_330','ap_326'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','active_punches','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids','ap_330','ap_326','ap_raw'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -679,7 +679,9 @@ function initFirebase() {
         handleFirestoreUpdate(key);
         return;
       }
-      if (key.startsWith('gl_')) {
+      // gl_ and ap_raw are written by Make.com as a top-level {reportJson,lastSync}
+      // (the raw QBO report), NOT wrapped in a `value` field — store as-is.
+      if (key.startsWith('gl_') || key === 'ap_raw') {
         const data = snap.data();
         if (!data) return;
         S.setLocal(key, data);
@@ -743,6 +745,7 @@ function handleFirestoreUpdate(key) {
   else if (key === 'materials_326')   renderMaterials('326');
   else if (key === 'ap_330')          renderMaterials('330');
   else if (key === 'ap_326')          renderMaterials('326');
+  else if (key === 'ap_raw')          { renderMaterials('330'); renderMaterials('326'); }
   else if (key === 'finishes_330')    renderFinishes('330');
   else if (key === 'finishes_326')    renderFinishes('326');
   else if (key === 'loan_326' || key === 'loan_326_investor') renderLoan('326');
@@ -2303,9 +2306,94 @@ function cycleMaterialStatus(project, id) {
   saveMaterialField(project, id, 'status', next);
 }
 
-// Open A/P (unpaid bills) for a project, synced nightly from QuickBooks A/P aging
-// → dashboard/ap_<project> = { bills:[{vendor,amount,due,ref,type}], total, asOf }.
-function getAP(project) { return S.get('ap_' + project, { bills: [], total: 0, asOf: null }); }
+// Open A/P (unpaid bills), synced from QuickBooks A/P aging by the cloud Make.com
+// scenario "Integration A/P Sync" (every 8h) → dashboard/ap_raw = the raw QBO
+// AgedPayableDetail report (reportJson string) + lastSync. We attribute each open
+// bill/credit to a project HERE: first by "330"/"326" in the Ref# (Num), else by
+// matching the vendor (and amount) against that project's GL feed — because the
+// bill's cost already posts to the right home's Inventory Asset account, so the GL
+// is an authoritative project signal even when the Ref# is just a vendor invoice #.
+// Falls back to the legacy per-project ap_<project> docs if ap_raw isn't present.
+let _apRawSrc = null, _apRawCache = null;
+function parseAPRaw() {
+  const doc = S.get('ap_raw', null);
+  if (!doc) return null;
+  let rep = null;
+  if (typeof doc.reportJson === 'string') { try { rep = JSON.parse(doc.reportJson); } catch {} }
+  else if (doc.reportJson && typeof doc.reportJson === 'object') rep = doc.reportJson;
+  if (!rep || !rep.Columns) return null;
+  const cols = (rep.Columns.Column || []).map(c => ({
+    key:   (c.MetaData || []).find(m => m.Name === 'ColKey')?.Value || '',
+    title: c.ColTitle || ''
+  }));
+  const col = (keys, title) => cols.findIndex(c => keys.includes(c.key) || c.title === title);
+  const iType = col(['txn_type'], 'Transaction Type'),
+        iRef  = col(['doc_num'],  'Num'),
+        iVend = col(['vend_name'], 'Vendor'),
+        iDue  = col(['due_date'],  'Due Date'),
+        // QBO names this column 'subt_neg_open_bal' (not 'open_bal') — match by substring + title.
+        iOpen = cols.findIndex(c => /open_bal/.test(c.key) || c.title === 'Open Balance');
+  if (iType < 0 || iVend < 0 || iOpen < 0) return null;
+  const items = [];
+  const walk = arr => { if (!Array.isArray(arr)) return; arr.forEach(r => {
+    if (r.ColData) {
+      const c = r.ColData;
+      const type = (c[iType]?.value || '').toLowerCase();
+      const openRaw = c[iOpen]?.value;
+      const open = Number(String(openRaw ?? '').replace(/,/g, ''));
+      if ((type === 'bill' || type === 'vendor credit') && openRaw !== '' && openRaw != null && !isNaN(open)) {
+        const due = c[iDue]?.value;
+        items.push({
+          vendor: c[iVend]?.value || '',
+          ref: c[iRef]?.value || '',
+          due: (due && due !== '0-00-00') ? due : null,
+          type: type === 'vendor credit' ? 'credit' : 'bill',
+          amount: open
+        });
+      }
+    }
+    if (r.Rows?.Row) walk(r.Rows.Row);
+  }); };
+  walk(rep.Rows?.Row);
+  // Per-project GL vendor rows for the fallback attribution.
+  const gl = { '330': parseGLRows(S.get('gl_330', null)) || [],
+               '326': parseGLRows(S.get('gl_326', null)) || [] };
+  const attribute = (vendor, amount) => {
+    const v = normVendor(vendor); if (!v) return null;
+    const v0 = v.split(' ')[0];
+    const hits = [];
+    ['330', '326'].forEach(p => {
+      const found = gl[p].find(row => {
+        const nl = normVendor(row.payee);
+        return nl && (nl.includes(v) || v.includes(nl) || (v0 && nl.includes(v0)));
+      });
+      if (found) hits.push({ p, d: Math.abs(Math.abs(found.amount) - Math.abs(amount)) });
+    });
+    if (hits.length === 1) return hits[0].p;
+    if (hits.length === 2) return hits.sort((a, b) => a.d - b.d)[0].p;
+    return null;
+  };
+  const out = { '330': [], '326': [] };
+  items.forEach(b => {
+    const r = (b.ref || '').toLowerCase();
+    let p = r.includes('326') ? '326' : (r.includes('330') ? '330' : null);
+    if (!p) p = attribute(b.vendor, b.amount);
+    if (p) out[p].push(b);
+  });
+  return out;
+}
+function getAP(project) {
+  const raw = S.get('ap_raw', null);
+  if (raw) {
+    if (raw.reportJson !== _apRawSrc) { _apRawCache = parseAPRaw(); _apRawSrc = raw.reportJson; }
+    if (_apRawCache) {
+      const bills = _apRawCache[project] || [];
+      const total = Math.round(bills.reduce((s, b) => s + (Number(b.amount) || 0), 0) * 100) / 100;
+      return { bills, total, asOf: raw.lastSync || null };
+    }
+  }
+  return S.get('ap_' + project, { bills: [], total: 0, asOf: null });
+}
 
 // Sum the open A/P balance owed to one vendor (token-match against the bill payees;
 // includes vendor credits as negatives, so a credit that offsets a bill nets to 0).
