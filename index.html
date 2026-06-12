@@ -1358,6 +1358,13 @@ function renderBudget(project) {
   const costRemaining = budget - qb;
   const pct = budget > 0 ? Math.min(120, Math.round(qb / budget * 100)) : 0;
   const over = pct > 100;
+  // ROI summary (uses this box's own profit/cost so the tiles stay consistent).
+  const roiPct = budget > 0 ? projectedProfit / budget * 100 : 0;
+  const hasFinancing = !!LOAN_INFO[project];
+  const financed = loanDrawn(project);
+  const cashInvested = Math.max(0, budget - financed);
+  const cocPct = cashInvested > 0 ? projectedProfit / cashInvested * 100 : 0;
+  const haveFin = salePrice && budget;
 
   document.getElementById('budget-' + project).innerHTML = `
     <div class="card">
@@ -1387,6 +1394,16 @@ function renderBudget(project) {
         <div class="budget-item">
           <div class="b-label">Projected Profit</div>
           <div class="b-value ${projectedProfit >= 0 ? 'green' : 'red'}">${(salePrice && budget) ? fmt(projectedProfit) : '—'}</div>
+        </div>
+        <div class="budget-item">
+          <div class="b-label">ROI · Return on Cost</div>
+          <div class="b-value ${roiPct >= 0 ? 'green' : 'red'}">${haveFin ? roiPct.toFixed(1) + '%' : '—'}</div>
+          <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px;">Profit ÷ cost budget</div>
+        </div>
+        <div class="budget-item">
+          <div class="b-label">Cash-on-Cash</div>
+          <div class="b-value ${cocPct >= 0 ? 'green' : 'red'}">${haveFin ? cocPct.toFixed(1) + '%' : '—'}</div>
+          <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px;">${hasFinancing ? `Profit ÷ cash in · ${fmt(financed)} drawn` : 'All Falcon cash — = ROI'}</div>
         </div>
       </div>
       ${budget ? `<div class="progress-bar"><div class="progress-fill ${over ? 'over' : ''}" style="width:${Math.min(100,pct)}%"></div></div>
