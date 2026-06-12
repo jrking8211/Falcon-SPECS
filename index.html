@@ -1015,8 +1015,8 @@ const VENDOR_PHASE = [
   ['tn crane','Framing & Exterior Shell'], ['reagan steel','Framing & Exterior Shell'],
   ['lansing','Framing & Exterior Shell'], ['duo-fast','Framing & Exterior Shell'],
   ['carlos baca','Framing & Exterior Shell'], ['baca','Framing & Exterior Shell'],
-  ['witt','Framing & Exterior Shell'], ['us brick','Exterior Finishes'], // US Brick = finish brick veneer
-  ['construction services','Exterior Finishes'], ['robbins','Framing & Exterior Shell'], // Const. Svcs One = brick mason (block labor lines still route to Foundation by memo)
+  ['witt','Framing & Exterior Shell'], ['us brick','Framing & Exterior Shell'], // US Brick = brick veneer (wall finish = shell per NAHB)
+  ['construction services','Framing & Exterior Shell'], ['robbins','Framing & Exterior Shell'], // Const. Svcs One = brick mason → shell (block labor lines still route to Foundation by memo)
   ['phoenix electric','MEP Rough-in'], ['pheonix','MEP Rough-in'],
   ['finchum','MEP Rough-in'], ['priority plumb','MEP Rough-in'], ['taylor plumb','MEP Rough-in'],
   ['ferguson','MEP Rough-in'], ['noland','MEP Rough-in'],
@@ -1044,8 +1044,8 @@ function descPhase(t) {
   if (has('lot closing','title fee','closing cost')) return 'Lot Acquired';
   if (has('tap fee','sewer tap','water tap','dumpster','dump fee','portable toilet','porta-john','porta john','sanitation','temp power','temporary power','utility deposit','meter fee','impact fee')) return 'Utilities / Site Fees'; // site services & utility connections (bare 'sewer'/'water' avoided — collide with plumbing)
   if (has('footer','footing','foundation pour','cmu','block','rebar','excavat','grading','crawlspace','waterproof','sand','gravel')) return 'Foundation';
-  if (has('flatwork','driveway','sidewalk','slab','final grade','landscap','sod','seeding','retaining wall','garage door','exterior paint','ext paint','siding paint','paint exterior','brick','mortar','brick veneer','brick labor','finish brick','weep','wall tie','lintel','stone install','stone veneer')) return 'Exterior Finishes'; // finish brick/stone veneer = exterior finish (NOT structural block, which is caught above by cmu/block)
-  if (has('framing','lumber','truss','roof','shingle','soffit','fascia','siding','gutter','exterior door','exterior trim','window','decking')) return 'Framing & Exterior Shell';
+  if (has('flatwork','driveway','sidewalk','slab','final grade','landscap','sod','seeding','retaining wall','garage door')) return 'Exterior Finishes'; // outdoor/final-steps only (driveway, flatwork, grading, landscaping)
+  if (has('framing','lumber','truss','roof','shingle','soffit','fascia','siding','gutter','exterior door','exterior trim','window','decking','brick','mortar','brick veneer','brick labor','finish brick','weep','wall tie','lintel','stone install','stone veneer','exterior paint','ext paint','siding paint','paint exterior')) return 'Framing & Exterior Shell'; // wall finish (brick/stone/siding veneer + ext. paint) is part of the shell per NAHB — structural block still caught above by cmu/block→Foundation
   if (has('rough plumb','rough electric','electrical rough','rough-in','rough in','hvac','ductwork','duct ','mechanical')) return 'MEP Rough-in';
   if (has('drywall','sheetrock','gypsum','insulat')) return 'Drywall & Insulation';
   if (has('cabinet','countertop','tile','lvp','wood floor','carpet','flooring','interior paint','interior trim','interior door','stair part','vanity','backsplash','fixture','appliance','lighting','hardware','shelving','closet shelf','shelf','fireplace')) return 'Interior Finishes';
@@ -1178,7 +1178,7 @@ const MATERIALS = {
     { id: 'elec-fixtures',    item: 'Electrical fixtures', vendor: 'Phoenix Electric / TBD', cost: 0, status: 'not-ordered', neededBy: '2026-07-05' },
     { id: 'hvac',             item: 'HVAC rough-in & install', vendor: 'A1 Finchum', cost: 0, status: 'ordered', neededBy: '2026-09-15' },
     // Masonry (block + brick) intentionally NOT a manual line — it's driven directly
-    // from the QuickBooks GL, which splits it: block labor -> Foundation, brick labor -> Exterior Finishes.
+    // from the QuickBooks GL, which splits it: block labor -> Foundation, brick labor -> Framing & Exterior Shell.
     { id: 'appliances',       item: 'Appliances', vendor: 'Costco', cost: 0, status: 'not-ordered', neededBy: '2026-07-25' },
     { id: 'hardware',         item: 'Hardware (knobs / pulls)', vendor: 'TBD', cost: 0, status: 'not-ordered', neededBy: '2026-07-10' },
     { id: 'fireplace',        item: 'Fireplace + stone', vendor: "Archie's", cost: 4135, status: 'installed', neededBy: '2026-04-15' },
@@ -2424,11 +2424,11 @@ const VENDOR_SCOPE = [
   { v: 'pro pump', label: 'Concrete pumping' }, { v: 'concrete pump', label: 'Concrete pumping' },
   { v: 'ag heins', label: 'Foundation & site materials' }, { v: 'a g heins', label: 'Foundation & site materials' },
   { v: 'construction services', ph: 'Foundation', label: 'CMU block labor' },
-  { v: 'construction services', ph: 'Exterior Finishes', label: 'Brick & stone mason labor' },
+  { v: 'construction services', ph: 'Framing & Exterior Shell', label: 'Brick & stone mason labor' },
   { v: 'witt', ph: 'Foundation', label: 'Rebar & footer materials' },
   { v: 'witt', ph: 'Interior Finishes', label: 'Interior trim' },
   { v: 'us brick', ph: 'Foundation', label: 'Masonry sand' },
-  { v: 'us brick', ph: 'Exterior Finishes', label: 'Brick veneer & mortar' },
+  { v: 'us brick', ph: 'Framing & Exterior Shell', label: 'Brick veneer & mortar' },
   // Framing & Exterior Shell
   { v: 'carlos baca', ph: 'Framing & Exterior Shell', label: 'Framing & roofing labor' },
   { v: 'carlos baca', ph: 'Drywall & Insulation', label: 'Drywall hang & finish labor' },
@@ -3669,7 +3669,20 @@ function checkTodoReminders(force) {
 // ─── BIDS & ESTIMATES (per project; bid-vs-actual vs QuickBooks) ──
 // Bids are added manually or by the nightly intake scan (status 'pending'
 // until confirmed). Each bid reconciles live against QB GL spend for its vendor.
-function getBids() { return S.get('bids', []); }
+// Brick/stone veneer + exterior paint were reclassified from Exterior Finishes
+// to Framing & Exterior Shell (matches NAHB and the GL categorizer). Older stored
+// bids may still be tagged Exterior Finishes, which would split them from where
+// their QuickBooks actuals now land. Normalize on read: if an Exterior-Finishes
+// bid's vendor/trade now categorizes to the shell, re-tag it so the Bids and
+// Materials cards align. Idempotent; persists to the cloud on the next bid save.
+function getBids() {
+  return S.get('bids', []).map(b => {
+    if (b.phase === 'Exterior Finishes' && categorizePhase(b.vendor, b.trade) === 'Framing & Exterior Shell') {
+      return { ...b, phase: 'Framing & Exterior Shell' };
+    }
+    return b;
+  });
+}
 
 // Compare a bid to live QB actual for that vendor — SCOPED TO THE BID'S PHASE so a
 // multi-trade vendor's other spend isn't counted (e.g. Witt rebar/footer in Foundation
