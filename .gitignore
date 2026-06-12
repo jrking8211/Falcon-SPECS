@@ -5,3 +5,7 @@ Realtor Briefs/
 
 # OS / editor cruft
 .DS_Store
+
+# Local agent notes — not for the public GitHub Pages site
+CLAUDE.md
+.claude/
