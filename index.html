@@ -2994,8 +2994,8 @@ function finishesToItems(f) {
   (f.flooring||[]).forEach(([label,sel]) => out.push({ category:'Flooring', label, selection:sel, hex:'', link:'' }));
   return out;
 }
-// Defaults: 330 from its locked-in selections; 326 mirrors the 330 template.
-const FINISH_DEFAULT = { '330': finishesToItems(FINISHES['330']), '326': finishesToItems(FINISHES['330']) };
+// Defaults: 330 from its locked-in selections; 326 is TBD (not yet selected).
+const FINISH_DEFAULT = { '330': finishesToItems(FINISHES['330']), '326': [] };
 
 function getFinishes(project) {
   return S.get('finishes_' + project, null) || (FINISH_DEFAULT[project] || []).map(i => ({ ...i }));
