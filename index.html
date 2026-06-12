@@ -2241,27 +2241,34 @@ function benchmarkBlock(phases, project) {
   if (!bench.length) return '';
   const cTotal = bench.reduce((s, p) => s + p.budget, 0) || 1;
   const cSpent = bench.reduce((s, p) => s + p.spent, 0);
-  const maxV = Math.max(1, ...bench.map(p => Math.max(p.budget, cTotal * INDUSTRY_PCT[p.phase] / 100)));
+  const maxV = Math.max(1, ...bench.map(p => Math.max(p.budget, p.spent, cTotal * INDUSTRY_PCT[p.phase] / 100)));
   const sqft = (PLAN_DATA[project] && PLAN_DATA[project].sqftTotal) || 0;
   const rows = bench.map(p => {
-    const your = p.budget;
-    const ind  = cTotal * INDUSTRY_PCT[p.phase] / 100;
-    const yPct = Math.round(your / cTotal * 100);
-    const diff = ind > 0 ? Math.round((your / ind - 1) * 100) : 0;
-    const dColor = Math.abs(diff) <= 10 ? 'var(--green)' : (diff > 0 ? 'var(--red)' : 'var(--blue)');
-    return `<div style="margin-bottom:10px;">
+    const your  = p.budget;
+    const spent = p.spent || 0;
+    const ind   = cTotal * INDUSTRY_PCT[p.phase] / 100;
+    const diff   = ind > 0 ? Math.round((your  / ind - 1) * 100) : 0;  // budget vs industry
+    const sDiff  = ind > 0 ? Math.round((spent / ind - 1) * 100) : 0;  // actual spend vs industry
+    const dColor = Math.abs(diff)  <= 10 ? 'var(--green)' : (diff  > 0 ? 'var(--red)' : 'var(--blue)');
+    const sColor = Math.abs(sDiff) <= 10 ? 'var(--green)' : (sDiff > 0 ? 'var(--red)' : 'var(--blue)');
+    return `<div style="margin-bottom:12px;">
       <div style="display:flex;justify-content:space-between;font-size:0.78rem;margin-bottom:2px;">
         <span style="font-weight:600;">${p.phase}</span>
-        <span style="color:${dColor};font-weight:700;">${diff > 0 ? '+' : ''}${diff}% vs avg</span>
+        <span style="color:${dColor};font-weight:700;">${diff > 0 ? '+' : ''}${diff}% vs avg <span style="font-weight:400;color:var(--text-muted);">(budget)</span></span>
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
-        <span style="width:62px;font-size:0.64rem;color:var(--gold);text-align:right;">This home</span>
-        <div style="flex:1;height:11px;background:var(--surface2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${your / maxV * 100}%;background:var(--gold);border-radius:6px;"></div></div>
+        <span style="width:62px;font-size:0.64rem;color:var(--gold);text-align:right;">Budget</span>
+        <div style="flex:1;height:10px;background:var(--surface2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${your / maxV * 100}%;background:var(--gold);border-radius:6px;"></div></div>
         <span style="width:74px;font-size:0.66rem;font-variant-numeric:tabular-nums;">${fmt(your)}</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px;margin-top:2px;">
+        <span style="width:62px;font-size:0.64rem;color:var(--orange);text-align:right;">Spent</span>
+        <div style="flex:1;height:10px;background:var(--surface2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${spent / maxV * 100}%;background:var(--orange);border-radius:6px;"></div></div>
+        <span style="width:74px;font-size:0.66rem;font-variant-numeric:tabular-nums;">${fmt(spent)}${spent > 0 ? ` <span style="color:${sColor};">${sDiff > 0 ? '+' : ''}${sDiff}%</span>` : ''}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:2px;">
         <span style="width:62px;font-size:0.64rem;color:var(--blue);text-align:right;">Industry</span>
-        <div style="flex:1;height:11px;background:var(--surface2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${ind / maxV * 100}%;background:var(--blue);border-radius:6px;"></div></div>
+        <div style="flex:1;height:10px;background:var(--surface2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${ind / maxV * 100}%;background:var(--blue);border-radius:6px;opacity:0.55;"></div></div>
         <span style="width:74px;font-size:0.66rem;font-variant-numeric:tabular-nums;color:var(--text-muted);">${fmt(ind)} · ${INDUSTRY_PCT[p.phase]}%</span>
       </div>
     </div>`;
@@ -2274,7 +2281,7 @@ function benchmarkBlock(phases, project) {
       </div>
       ${rows}
       <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px;font-style:italic;">
-        Gold = this home's projected cost per phase; blue = NAHB industry-average share of construction cost applied to this home's build total. <span style="color:var(--green);">Green</span> = within ±10% of average, <span style="color:var(--red);">red</span> = above, <span style="color:var(--blue);">blue</span> = below. Lot, soft costs, loan &amp; listing excluded. Source: NAHB “Cost of Constructing a Home.”
+        <span style="color:var(--gold);font-weight:700;">Budget</span> = this home's projected cost per phase · <span style="color:var(--orange);font-weight:700;">Spent</span> = actual QuickBooks spend so far · <span style="color:var(--blue);font-weight:700;">Industry</span> = NAHB average share applied to this home's build total. The headline % compares budget vs average; the small % on the Spent bar compares actual spend vs average (it reads low until a phase is fully built). <span style="color:var(--green);">Green</span> = within ±10%, <span style="color:var(--red);">red</span> = above, <span style="color:var(--blue);">blue</span> = below. Lot, soft costs, loan &amp; listing excluded. Source: NAHB “Cost of Constructing a Home.”
       </div>
     </div>`;
 }
