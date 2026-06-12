@@ -2202,6 +2202,7 @@ function renderPhaseBudget(project) {
           ${syncBadge}
           <span class="badge badge-gold">${fmt(totalSpent)} / ${fmt(totalBudget)}</span>
           ${predToggle}
+          <button id="pb-edit-${project}" class="edit-toggle${editMode?' on':''}" onclick="toggleEditMode('${project}')">${editMode?'✓ Done Editing':'✏️ Edit'}</button>
         </div>
       </div>
       <div class="table-wrap"><table class="budget-line-table">
