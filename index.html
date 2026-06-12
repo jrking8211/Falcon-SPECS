@@ -1354,15 +1354,18 @@ function renderBudget(project) {
   // section), so the header always matches and tracks any phase edits.
   const budget = PHASE_ORDER.reduce((s, ph) => s + phaseBudget(project, ph), 0);
   const salePrice = b.projectedSalePrice || 0;
-  const projectedProfit = salePrice - budget;
-  const costRemaining = budget - qb;
+  const commissionRate = (PLAN_DATA[project] && PLAN_DATA[project].commissionRate) || 0.03;
+  const commission = Math.round(salePrice * commissionRate);
+  const allInCost = budget + commission;          // construction budget + sale commission (a real cost to sell)
+  const projectedProfit = salePrice - allInCost;  // net of commission
+  const costRemaining = budget - qb;              // construction-only (commission is paid at closing, not a build cost)
   const pct = budget > 0 ? Math.min(120, Math.round(qb / budget * 100)) : 0;
   const over = pct > 100;
   // ROI summary (uses this box's own profit/cost so the tiles stay consistent).
-  const roiPct = budget > 0 ? projectedProfit / budget * 100 : 0;
+  const roiPct = allInCost > 0 ? projectedProfit / allInCost * 100 : 0;
   const hasFinancing = !!LOAN_INFO[project];
   const financed = loanDrawn(project);
-  const cashInvested = Math.max(0, budget - financed);
+  const cashInvested = Math.max(0, allInCost - financed);
   const cocPct = cashInvested > 0 ? projectedProfit / cashInvested * 100 : 0;
   const haveFin = salePrice && budget;
 
@@ -1394,11 +1397,12 @@ function renderBudget(project) {
         <div class="budget-item">
           <div class="b-label">Projected Profit</div>
           <div class="b-value ${projectedProfit >= 0 ? 'green' : 'red'}">${(salePrice && budget) ? fmt(projectedProfit) : '—'}</div>
+          <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px;">After ${fmt(commission)} sale commission</div>
         </div>
         <div class="budget-item">
           <div class="b-label">ROI · Return on Cost</div>
           <div class="b-value ${roiPct >= 0 ? 'green' : 'red'}">${haveFin ? roiPct.toFixed(1) + '%' : '—'}</div>
-          <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px;">Profit ÷ cost budget</div>
+          <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px;">Profit ÷ all-in cost (incl. commission)</div>
         </div>
         <div class="budget-item">
           <div class="b-label">Cash-on-Cash</div>
