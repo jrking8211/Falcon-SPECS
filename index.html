@@ -1023,7 +1023,7 @@ const VENDOR_PHASE = [
   ['foundation building','Drywall & Insulation'], ['dale insulation','Drywall & Insulation'],
   ['old city','Interior Finishes'], ['standard kitchen','Interior Finishes'],
   ['cella','Interior Finishes'], ['universal paint','Interior Finishes'],
-  ['stone design','Interior Finishes'], ['archie','Interior Finishes'], ['farmer garage','Exterior Finishes'],
+  ['stone design','Interior Finishes'], ['archie','Interior Finishes'], ['farmer garage','Framing & Exterior Shell'],
   ['costco','Interior Finishes'], ['amazon','Interior Finishes'],
   ['williams concrete','Exterior Finishes'],
   ['ag heins','Foundation'], ['a g heins','Foundation'], // foundation & site materials
@@ -1044,8 +1044,8 @@ function descPhase(t) {
   if (has('lot closing','title fee','closing cost')) return 'Lot Acquired';
   if (has('tap fee','sewer tap','water tap','dumpster','dump fee','portable toilet','porta-john','porta john','sanitation','temp power','temporary power','utility deposit','meter fee','impact fee')) return 'Utilities / Site Fees'; // site services & utility connections (bare 'sewer'/'water' avoided — collide with plumbing)
   if (has('footer','footing','foundation pour','cmu','block','rebar','excavat','grading','crawlspace','waterproof','sand','gravel')) return 'Foundation';
-  if (has('flatwork','driveway','sidewalk','slab','final grade','landscap','sod','seeding','retaining wall','garage door')) return 'Exterior Finishes'; // outdoor/final-steps only (driveway, flatwork, grading, landscaping)
-  if (has('framing','lumber','truss','roof','shingle','soffit','fascia','siding','gutter','exterior door','exterior trim','window','decking','brick','mortar','brick veneer','brick labor','finish brick','weep','wall tie','lintel','stone install','stone veneer','exterior paint','ext paint','siding paint','paint exterior')) return 'Framing & Exterior Shell'; // wall finish (brick/stone/siding veneer + ext. paint) is part of the shell per NAHB — structural block still caught above by cmu/block→Foundation
+  if (has('flatwork','driveway','sidewalk','slab','final grade','landscap','sod','seeding','retaining wall')) return 'Exterior Finishes'; // outdoor/final-steps only (driveway, flatwork, grading, landscaping)
+  if (has('framing','lumber','truss','roof','shingle','soffit','fascia','siding','gutter','exterior door','exterior trim','window','decking','garage door','brick','mortar','brick veneer','brick labor','finish brick','weep','wall tie','lintel','stone install','stone veneer','exterior paint','ext paint','siding paint','paint exterior')) return 'Framing & Exterior Shell'; // shell openings + wall finish (windows, ext/garage doors, brick/stone/siding veneer, ext. paint) per NAHB — structural block still caught above by cmu/block→Foundation
   if (has('rough plumb','rough electric','electrical rough','rough-in','rough in','hvac','ductwork','duct ','mechanical')) return 'MEP Rough-in';
   if (has('drywall','sheetrock','gypsum','insulat')) return 'Drywall & Insulation';
   if (has('cabinet','countertop','tile','lvp','wood floor','carpet','flooring','interior paint','interior trim','interior door','stair part','vanity','backsplash','fixture','appliance','lighting','hardware','shelving','closet shelf','shelf','fireplace')) return 'Interior Finishes';
