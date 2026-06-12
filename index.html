@@ -2091,6 +2091,7 @@ function renderProjectDetail(project) {
   const displayMargin = displaySale > 0 ? (displayProfit / displaySale * 100).toFixed(1) : 0;
 
   // ROI calculator defaults — cash-on-cash uses Falcon's cash in (cost − financed draws).
+  const hasFinancing = !!LOAN_INFO[project];   // 326 is financed even before any draw is recorded
   const financed = loanDrawn(project);
   const cashInvested = Math.max(0, totalProjected - financed);
   const roiCostPct = totalProjected > 0 ? projProfit / totalProjected * 100 : 0;
@@ -2122,8 +2123,8 @@ function renderProjectDetail(project) {
       </div>
       <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
         <div style="font-size:0.7rem;color:var(--text-muted);font-style:italic;">
-          ${financed > 0
-            ? `Cash invested defaults to all-in cost minus financed draws (${fmt(financed)} on the Pinnacle + investor loans), so cash-on-cash reflects leverage. Edit any field for what-ifs.`
+          ${hasFinancing
+            ? `326 is financed by the Pinnacle + investor loans. Cash invested defaults to all-in cost minus draws to date (${fmt(financed)} drawn), so cash-on-cash reflects leverage — edit cash invested to model your expected equity at completion.`
             : `This home is all Falcon cash — cash invested = all-in cost, so cash-on-cash matches return on cost. Edit any field for what-ifs.`}
         </div>
         <button onclick="resetROI('${project}')" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 12px;font-size:0.72rem;cursor:pointer;white-space:nowrap;">↺ Reset</button>
