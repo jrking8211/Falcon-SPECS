@@ -2090,6 +2090,46 @@ function renderProjectDetail(project) {
   const displayProfit = projProfit;
   const displayMargin = displaySale > 0 ? (displayProfit / displaySale * 100).toFixed(1) : 0;
 
+  // ROI calculator defaults — cash-on-cash uses Falcon's cash in (cost − financed draws).
+  const financed = loanDrawn(project);
+  const cashInvested = Math.max(0, totalProjected - financed);
+  const roiCostPct = totalProjected > 0 ? projProfit / totalProjected * 100 : 0;
+  const cocPct     = cashInvested  > 0 ? projProfit / cashInvested  * 100 : 0;
+  const roiInput = (lbl, id, val) => `<div style="flex:1;min-width:140px;">
+        <div class="s-lbl" style="margin-bottom:4px;">${lbl}</div>
+        <input id="roi-${id}-${project}" type="number" class="alloc-input" style="width:100%;" value="${Math.round(val)}" oninput="recalcROI('${project}')">
+      </div>`;
+  const roiOut = (lbl, id, val, pos, sub) => `<div style="flex:1;min-width:140px;background:var(--surface2);border-radius:8px;padding:12px 14px;">
+        <div class="s-lbl">${lbl}</div>
+        <div id="roi-out-${id}-${project}" style="font-weight:800;font-size:1.3rem;margin-top:2px;color:${pos?'var(--green)':'var(--red)'};">${val}</div>
+        ${sub?`<div style="font-size:0.66rem;color:var(--text-muted);margin-top:2px;">${sub}</div>`:''}
+      </div>`;
+  const roiCard = `
+    <div class="card">
+      <div class="section-header">
+        <div class="card-title">ROI Calculator</div>
+        <span class="badge badge-gray">What-if scenario</span>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+        ${roiInput('Sale price', 'sale', displaySale)}
+        ${roiInput('All-in cost', 'cost', totalProjected)}
+        ${roiInput('Cash invested', 'cash', cashInvested)}
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        ${roiOut('Net profit', 'profit', fmt(projProfit), projProfit>=0, 'sale − all-in cost')}
+        ${roiOut('ROI · return on cost', 'roicost', roiCostPct.toFixed(1)+'%', roiCostPct>=0, 'profit ÷ all-in cost')}
+        ${roiOut('Cash-on-cash', 'coc', cocPct.toFixed(1)+'%', cocPct>=0, 'profit ÷ cash in' + (financed>0?` · financed ${fmt(financed)}`:''))}
+      </div>
+      <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div style="font-size:0.7rem;color:var(--text-muted);font-style:italic;">
+          ${financed > 0
+            ? `Cash invested defaults to all-in cost minus financed draws (${fmt(financed)} on the Pinnacle + investor loans), so cash-on-cash reflects leverage. Edit any field for what-ifs.`
+            : `This home is all Falcon cash — cash invested = all-in cost, so cash-on-cash matches return on cost. Edit any field for what-ifs.`}
+        </div>
+        <button onclick="resetROI('${project}')" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 12px;font-size:0.72rem;cursor:pointer;white-space:nowrap;">↺ Reset</button>
+      </div>
+    </div>`;
+
   container.innerHTML = `
     <div class="card">
       <div class="section-header">
@@ -2170,8 +2210,42 @@ function renderProjectDetail(project) {
           </div>
           <div style="margin-top:10px;font-size:0.75rem;color:var(--text-muted);font-style:italic;">${p.compNotes}</div>
         </div>
-      </div>`;
+      </div>
+    ${roiCard}`;
 }
+
+// Total drawn across a project's construction/investor loans (0 if cash-financed).
+// Used as the cash-on-cash default: Falcon's cash in = all-in cost − financed draws.
+function loanDrawn(project) {
+  let loans = LOAN_INFO[project];
+  if (!loans) return 0;
+  if (!Array.isArray(loans)) loans = [loans];
+  return loans.reduce((sum, info) => {
+    const loan = S.get(info.fsKey || ('loan_' + project), null);
+    if (!loan) return sum;
+    if (loan.reportJson || loan.rows || loan.rowsJson || loan.Rows) {
+      const rows = parseGLRows(loan) || [];
+      return sum + Math.abs(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0));
+    }
+    if (loan.balance != null && loan.balance !== '') return sum + Number(loan.balance);
+    return sum;
+  }, 0);
+}
+
+// Live recompute of the ROI calculator from its three editable inputs.
+function recalcROI(project) {
+  const num = id => { const el = document.getElementById(id); return el ? (parseFloat(el.value) || 0) : 0; };
+  const sale = num('roi-sale-' + project), cost = num('roi-cost-' + project), cash = num('roi-cash-' + project);
+  const profit  = sale - cost;
+  const roiCost = cost > 0 ? profit / cost * 100 : 0;
+  const coc     = cash > 0 ? profit / cash * 100 : 0;
+  const set = (id, txt, pos) => { const el = document.getElementById(id); if (el) { el.textContent = txt; el.style.color = pos ? 'var(--green)' : 'var(--red)'; } };
+  set('roi-out-profit-' + project,  fmt(profit),           profit  >= 0);
+  set('roi-out-roicost-' + project, roiCost.toFixed(1) + '%', roiCost >= 0);
+  set('roi-out-coc-' + project,     coc.toFixed(1) + '%',     coc     >= 0);
+}
+// Restore the calculator inputs to live data (re-render clears what-if edits).
+function resetROI(project) { renderProjectDetail(project); }
 
 // ─── PHASE BUDGET (spent vs budget) ───────────────────────────
 function renderPhaseBudget(project) {
