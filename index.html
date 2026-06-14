@@ -46,6 +46,13 @@
     .tab.active { color: var(--gold); border-bottom-color: var(--gold); }
     .tab:hover:not(.active) { color: var(--text); }
 
+    /* Sticky in-page section nav (chips) — always-visible jump targets for the active tab */
+    .section-nav { display: flex; gap: 7px; background: var(--navy); padding: 8px 16px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+    .section-nav::-webkit-scrollbar { display: none; }
+    .section-nav:empty { display: none; }
+    .section-nav a { flex: 0 0 auto; padding: 5px 13px; background: var(--surface2); border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); font-size: 0.74rem; font-weight: 600; white-space: nowrap; cursor: pointer; text-decoration: none; transition: all 0.12s; }
+    .section-nav a:hover { color: var(--gold); border-color: var(--gold); }
+
     .view { display: none; padding: 24px; max-width: 1200px; margin: 0 auto; }
     .view.active { display: block; }
 
@@ -126,19 +133,7 @@
       border-color: var(--gold); background: var(--gold); color: #1a1a1a; }
     .card.collapsed > :not(.section-header):not(.card-title) { display: none !important; }
     .click-hint { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; }
-    .card { scroll-margin-top: 92px; }   /* clears the sticky header when jumping */
-    /* Quick-nav "Jump to section" button + dropdown */
-    .jump-btn { display: inline-flex; align-items: center; gap: 7px; background: var(--gold); color: #0f2630; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 800; cursor: pointer; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.13em; box-shadow: 0 2px 10px rgba(93,179,228,0.38); transition: transform 0.12s, box-shadow 0.15s, background 0.15s; }
-    .jump-btn:hover { background: #79c4ee; box-shadow: 0 5px 18px rgba(93,179,228,0.55); transform: translateY(-1px); }
-    .jump-btn:active { transform: translateY(0); box-shadow: 0 2px 8px rgba(93,179,228,0.4); }
-    .jump-btn .chev { font-size: 0.66em; transition: transform 0.2s; opacity: 0.9; }
-    .jump-btn.open .chev { transform: rotate(180deg); }
-    .jump-btn.open { background: #79c4ee; }
-    .quicknav-panel { position: fixed; top: 58px; right: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 34px rgba(0,0,0,0.55); z-index: 120; min-width: 230px; max-height: 72vh; overflow-y: auto; padding: 6px; }
-    .quicknav-panel .qn-head { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); padding: 6px 12px 4px; }
-    .quicknav-panel a { display: block; padding: 9px 12px; color: var(--text); font-size: 0.86rem; border-radius: 6px; cursor: pointer; text-decoration: none; white-space: nowrap; }
-    .quicknav-panel a:hover { background: var(--surface2); color: var(--gold); }
-    @media (max-width: 640px) { .quicknav-panel { left: 14px; right: 14px; min-width: 0; } }
+    .card { scroll-margin-top: calc(var(--sticky-h, 92px) + 12px); }   /* clears the sticky header + section nav when jumping */
 
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .form-group { display: flex; flex-direction: column; gap: 6px; }
@@ -279,6 +274,11 @@
       .form-group.full { grid-column: 1; }
       .budget-grid { grid-template-columns: repeat(2, 1fr); }
       header { padding: 12px 16px; }
+      /* shrink tabs so all four (330 / 326 / Time Log / Admin) fit without hidden side-scroll */
+      .tabs { padding: 0 6px; }
+      .tab { flex: 1 1 0; text-align: center; padding: 11px 4px; font-size: 0.72rem; }
+      .section-nav { padding: 7px 10px; gap: 6px; }
+      .section-nav a { padding: 5px 11px; font-size: 0.72rem; }
       .view { padding: 12px; }
       .card { padding: 16px 13px; }
       #sync-status { display: none; }
@@ -310,7 +310,6 @@
   <img src="logo.png?v=2" alt="Falcon Development" class="logo-img">
   <div style="display:flex;align-items:center;gap:10px;">
     <span id="sync-status"></span>
-    <button class="jump-btn" id="quicknav-btn" onclick="toggleQuickNav(event)" title="Jump to a section">Jump To<span class="chev">▾</span></button>
     <button class="sync-btn" style="background:var(--surface2);color:var(--text);" onclick="lockSite()" title="Lock dashboard">🔒</button>
   </div>
 </header>
@@ -320,8 +319,8 @@
   <div class="tab" onclick="switchTab('timelog')">⏱ Time Log</div>
   <div class="tab" onclick="requireAdmin('admin')">⚙ Admin</div>
 </div>
+<div id="section-nav" class="section-nav"></div>
 </div>
-<div id="quicknav-panel" class="quicknav-panel" style="display:none;"></div>
 
 <!-- 330 RODDY BRANCH -->
 <div class="view active" id="view-p330">
@@ -3295,59 +3294,39 @@ function switchTab(name) {
   if (view) view.classList.add('active');
   if (name==='admin') { renderAdminEntries(); renderBudgetEditor(); renderEmployeeList(); refreshEmployeeSelects(); renderClockedIn(); }
   if (name==='timelog') { refreshEmployeeSelects(); renderClock(); }
-  if (typeof closeQuickNav === 'function') closeQuickNav();
+  buildSectionNav();
 }
 
-// ─── QUICK-NAV: jump to any section in the active tab ──────────
-// Built fresh on open so it always reflects the cards currently rendered.
-function buildQuickNav() {
-  const panel = document.getElementById('quicknav-panel');
+// ─── STICKY SECTION-NAV: always-visible chips that jump to any card in the active tab ──
+// Cards in the project views get re-rendered async (Firebase sync), so we resolve the
+// target live by its position among titled cards instead of pinning a fragile element id.
+function sectionCards() {
   const view = document.querySelector('.view.active');
-  if (!panel || !view) return;
-  const cards = [...view.querySelectorAll('.card')];
-  let html = '<div class="qn-head">Jump to section</div>';
-  let n = 0;
-  cards.forEach(card => {
-    const t = card.querySelector('.card-title');
-    if (!t) return;
-    const label = t.textContent.trim();          // ::after ("Hide"/"Show") not included
-    if (!label) return;
-    if (!card.id) card.id = 'qn-' + view.id + '-' + (n++);
-    html += `<a onclick="quickNavGo('${card.id}')">${esc(label)}</a>`;
-  });
-  panel.innerHTML = html;
+  if (!view) return [];
+  return [...view.querySelectorAll('.card')]
+    .filter(c => { const t = c.querySelector('.card-title'); return t && t.textContent.trim(); });
 }
-function closeQuickNav() {
-  const panel = document.getElementById('quicknav-panel');
-  const btn = document.getElementById('quicknav-btn');
-  if (panel) panel.style.display = 'none';
-  if (btn) btn.classList.remove('open');
+function buildSectionNav() {
+  const nav = document.getElementById('section-nav');
+  if (!nav) return;
+  nav.innerHTML = sectionCards()
+    .map((c, i) => `<a onclick="quickNavGo(${i})">${esc(c.querySelector('.card-title').textContent.trim())}</a>`)
+    .join('');     // hidden via :empty when a tab has no titled cards
+  nav.scrollLeft = 0;
+  updateStickyOffset();
 }
-function toggleQuickNav(e) {
-  if (e) e.stopPropagation();
-  const panel = document.getElementById('quicknav-panel');
-  const btn = document.getElementById('quicknav-btn');
-  if (!panel) return;
-  if (panel.style.display === 'block') { closeQuickNav(); return; }
-  buildQuickNav();
-  panel.style.display = 'block';
-  if (btn) btn.classList.add('open');
-}
-function quickNavGo(id) {
-  closeQuickNav();
-  const card = document.getElementById(id);
+function quickNavGo(i) {
+  const card = sectionCards()[i];
   if (!card) return;
   if (card.classList.contains('collapsed')) toggleCardCollapse(card);  // expand + persist
   card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
-// Close the panel on any outside click
-document.addEventListener('click', e => {
-  const panel = document.getElementById('quicknav-panel');
-  if (panel && panel.style.display === 'block' &&
-      !e.target.closest('#quicknav-panel') && !e.target.closest('#quicknav-btn')) {
-    closeQuickNav();
-  }
-});
+// Keep the card scroll-margin in sync with the real sticky-stack height (header + tabs + chips)
+function updateStickyOffset() {
+  const bar = document.querySelector('.topbar');
+  if (bar) document.documentElement.style.setProperty('--sticky-h', bar.offsetHeight + 'px');
+}
+window.addEventListener('resize', updateStickyOffset);
 
 
 // ─── TOAST ─────────────────────────────────────────────────────
@@ -3978,6 +3957,7 @@ function init() {
   renderClock();
   document.getElementById('sync-status').textContent =
     'QB sync ' + new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  buildSectionNav();
 }
 
 window.addEventListener('DOMContentLoaded', init);
