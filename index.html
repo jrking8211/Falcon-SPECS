@@ -124,13 +124,13 @@
     .card > .section-header, .card > .card-title { cursor: pointer; user-select: none; }
     .card > .section-header > .card-title::after, .card > .card-title::after {
       content: '▾ Hide'; margin-left: 10px; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.03em;
-      color: var(--gold); background: var(--surface2); border: 1px solid var(--border);
+      color: var(--orange); background: var(--surface2); border: 1px solid var(--orange);
       border-radius: 999px; padding: 2px 9px; vertical-align: middle; white-space: nowrap;
       text-transform: none; transition: background 0.15s, border-color 0.15s; }
     .card.collapsed > .section-header > .card-title::after, .card.collapsed > .card-title::after { content: '▸ Show'; }
     /* Highlight the pill when hovering the (clickable) header */
     .card > .section-header:hover > .card-title::after, .card > .card-title:hover::after {
-      border-color: var(--gold); background: var(--gold); color: #1a1a1a; }
+      border-color: var(--orange); background: var(--orange); color: #1a1a1a; }
     .card.collapsed > :not(.section-header):not(.card-title) { display: none !important; }
     .click-hint { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; }
     .card { scroll-margin-top: calc(var(--sticky-h, 92px) + 12px); }   /* clears the sticky header + section nav when jumping */
@@ -3316,9 +3316,14 @@ function buildSectionNav() {
   updateStickyOffset();
 }
 function quickNavGo(i) {
-  const card = sectionCards()[i];
+  const cards = sectionCards();
+  const card = cards[i];
   if (!card) return;
-  if (card.classList.contains('collapsed')) toggleCardCollapse(card);  // expand + persist
+  // Accordion: expand the chosen section, collapse the rest (state persists)
+  cards.forEach((c, idx) => {
+    const wantCollapsed = idx !== i;
+    if (c.classList.contains('collapsed') !== wantCollapsed) toggleCardCollapse(c);
+  });
   card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 // Keep the card scroll-margin in sync with the real sticky-stack height (header + tabs + chips)
@@ -3562,33 +3567,28 @@ function seedEmployees() {
 
 // ─── INIT ──────────────────────────────────────────────────────
 // ─── COLLAPSIBLE CARDS ────────────────────────────────────────
-// Click a card header to collapse/expand; state persists by title key and is
-// re-applied after any re-render. Long reference sections start collapsed.
+// Every section starts collapsed on each visit. Expanding (via a chip jump or a
+// header click) is remembered for THIS session only — nothing persists, so the
+// page always opens clean. Re-applied after any re-render.
+const expandedKeys = new Set();   // session-only: which section titles are open
 function cardCollapseKey(card) {
   const t = card.querySelector('.card-title');
   if (!t) return '';
   return t.textContent.split('—')[0].trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
-function getCollapsedSet() { try { return new Set(JSON.parse(localStorage.getItem('fd_collapsed') || '[]')); } catch { return new Set(); } }
 function toggleCardCollapse(card) {
   card.classList.toggle('collapsed');
   const key = cardCollapseKey(card);
   if (!key) return;
-  const set = getCollapsedSet();
-  card.classList.contains('collapsed') ? set.add(key) : set.delete(key);
-  localStorage.setItem('fd_collapsed', JSON.stringify([...set]));
+  card.classList.contains('collapsed') ? expandedKeys.delete(key) : expandedKeys.add(key);
 }
 function applyCollapsed() {
-  const set = getCollapsedSet();
   document.querySelectorAll('.card').forEach(card => {
     const key = cardCollapseKey(card);
-    card.classList.toggle('collapsed', !!key && set.has(key));
+    card.classList.toggle('collapsed', !!key && !expandedKeys.has(key));  // default collapsed
   });
 }
 function initCollapse() {
-  if (localStorage.getItem('fd_collapsed') === null) {
-    localStorage.setItem('fd_collapsed', JSON.stringify(['plan-specs','pre-construction-cost-estimate','projected-budget','comparable-sales-pricing','materials-status','color-finish-selections','project-photos','documents']));
-  }
   document.addEventListener('click', e => {
     if (e.target.closest('button, input, a, select, textarea, label')) return;
     let n = e.target;
