@@ -3567,10 +3567,11 @@ function seedEmployees() {
 
 // ─── INIT ──────────────────────────────────────────────────────
 // ─── COLLAPSIBLE CARDS ────────────────────────────────────────
-// Every section starts collapsed on each visit. Expanding (via a chip jump or a
-// header click) is remembered for THIS session only — nothing persists, so the
-// page always opens clean. Re-applied after any re-render.
-const expandedKeys = new Set();   // session-only: which section titles are open
+// Every section starts collapsed on each visit EXCEPT the defaults below.
+// Expanding/collapsing (via a chip jump or a header click) is remembered for
+// THIS session only — nothing persists, so the page resets clean on reload.
+const DEFAULT_OPEN = ['budget-snapshot'];   // open on load until manually closed
+const expandedKeys = new Set(DEFAULT_OPEN); // session-only: which section titles are open
 function cardCollapseKey(card) {
   const t = card.querySelector('.card-title');
   if (!t) return '';
