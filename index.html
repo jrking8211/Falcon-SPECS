@@ -2428,6 +2428,34 @@ function parseAPRaw() {
   let rep = null;
   if (typeof doc.reportJson === 'string') { try { rep = JSON.parse(doc.reportJson); } catch {} }
   else if (doc.reportJson && typeof doc.reportJson === 'object') rep = doc.reportJson;
+
+  // Preferred format: QBO Bill query (SELECT * FROM Bill WHERE Balance > 0). Each open
+  // bill carries the project on its line — CustomerRef (customer/job) and AccountRef (GL
+  // account) — so we attribute by Jeff's own coding instead of guessing. No amount-matching.
+  if (rep && rep.QueryResponse && Array.isArray(rep.QueryResponse.Bill)) {
+    const projOf = (name) => { const s = name || ''; return /326/.test(s) ? '326' : (/330/.test(s) ? '330' : null); };
+    const out = { '330': [], '326': [] };
+    rep.QueryResponse.Bill.forEach(bill => {
+      const lines = Array.isArray(bill.Line) ? bill.Line : [];
+      let p = null;
+      for (const ln of lines) {
+        const d = ln.AccountBasedExpenseLineDetail || ln.ItemBasedExpenseLineDetail;
+        p = projOf(d && d.CustomerRef && d.CustomerRef.name) || projOf(d && d.AccountRef && d.AccountRef.name);
+        if (p) break;
+      }
+      if (!p) p = projOf(bill.DocNumber);   // last resort: a 330/326 tag in the Ref#
+      if (!p) return;                        // not one of our two homes — skip
+      out[p].push({
+        vendor: (bill.VendorRef && bill.VendorRef.name) || '',
+        ref: bill.DocNumber || '',
+        due: bill.DueDate || null,
+        type: 'bill',
+        amount: Number(bill.Balance) || 0
+      });
+    });
+    return out;
+  }
+
   if (!rep || !rep.Columns) return null;
   const cols = (rep.Columns.Column || []).map(c => ({
     key:   (c.MetaData || []).find(m => m.Name === 'ColKey')?.Value || '',
