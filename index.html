@@ -3094,6 +3094,23 @@ function renderMaterials(project) {
   // the "Color & Finish Selections" card directly below (selections[] is collected
   // above only to keep those lines out of the phase spend rows).
 
+  // Pinpoint exactly which bills are still owed (from QuickBooks A/P, per bill).
+  const apBills = (apData.bills || []).slice().sort((a, b) => (b.amount || 0) - (a.amount || 0));
+  const apBillsHtml = apBills.length ? `
+    <details class="mat-phase" style="margin-bottom:10px;">
+      <summary><span style="color:var(--orange);font-weight:700;">${fmt(Math.round(apData.total))} owed</span>
+        <span style="color:var(--text-muted);font-weight:400;">· ${apBills.length} unpaid ${apBills.length > 1 ? 'bills' : 'bill'}${apData.asOf ? ' · as of ' + apData.asOf : ''}</span></summary>
+      <div class="table-wrap"><table class="budget-line-table">
+        <thead><tr><th>Vendor</th><th>Ref&nbsp;#</th><th>Due</th><th style="text-align:right;">Unpaid</th></tr></thead>
+        <tbody>${apBills.map(b => `<tr>
+          <td>${esc(b.vendor || '—')}</td>
+          <td style="color:var(--text-muted);">${esc(b.ref || '—')}</td>
+          <td style="color:var(--text-muted);white-space:nowrap;">${b.due ? esc(b.due) : '—'}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;color:${(b.amount || 0) < 0 ? 'var(--green)' : 'var(--orange)'};">${(b.amount || 0) < 0 ? '(' + fmt(Math.round(Math.abs(b.amount))) + ')' : fmt(Math.round(b.amount))}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </details>` : '';
+
   el.innerHTML = `
     <div class="card">
       <div class="section-header">
@@ -3108,6 +3125,7 @@ function renderMaterials(project) {
       <div class="status-legend">
         ${[['pending','Pending'],['invoiced','Invoiced'],['partial','Partial'],['paid','Paid']].map(([k,l]) => `<span><span class="mat-status ms-${k}">${l}</span> ${counts[k]||0}</span>`).join('')}
       </div>
+      ${apBillsHtml}
       ${phaseHtml}
       <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Each phase auto-fills from actual QuickBooks spend, split line-by-line — a vendor working across phases (e.g. block labor vs. brick labor) appears under each. <span class="frombid">📋 bid</span> = estimate from a matched bid (edit on the Bids card). Status is QuickBooks-driven: <span class="mat-status ms-pending">Pending</span> (estimate on file, nothing billed) → <span class="mat-status ms-invoiced">Invoiced</span> (billed, owed) → <span class="mat-status ms-partial">Partial</span> (partly paid) → <span class="mat-status ms-paid">Paid</span> (paid off). Payment state comes from QuickBooks A/P${apData.asOf?', synced '+apData.asOf:''}. Color &amp; finish selections are in the card below.</div>
     </div>`;
