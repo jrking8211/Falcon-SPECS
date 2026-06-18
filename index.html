@@ -2468,13 +2468,21 @@ function parseAPRaw() {
   const attribute = (vendor, amount) => {
     const v = normVendor(vendor); if (!v) return null;
     const v0 = v.split(' ')[0];
+    const target = Math.abs(amount);
     const hits = [];
     ['330', '326'].forEach(p => {
-      const found = gl[p].find(row => {
+      // Smallest amount gap across ALL this vendor's GL lines in the project, so an
+      // exact bill↔posting match wins. The GL is coded to the same customer/job as
+      // the bill, so the home with the matching posting IS the home it belongs to.
+      let best = Infinity;
+      gl[p].forEach(row => {
         const nl = normVendor(row.payee);
-        return nl && (nl.includes(v) || v.includes(nl) || (v0 && nl.includes(v0)));
+        if (nl && (nl.includes(v) || v.includes(nl) || (v0 && nl.includes(v0)))) {
+          const d = Math.abs(Math.abs(row.amount) - target);
+          if (d < best) best = d;
+        }
       });
-      if (found) hits.push({ p, d: Math.abs(Math.abs(found.amount) - Math.abs(amount)) });
+      if (best < Infinity) hits.push({ p, d: best });
     });
     if (hits.length === 1) return hits[0].p;
     if (hits.length === 2) return hits.sort((a, b) => a.d - b.d)[0].p;
