@@ -316,6 +316,7 @@
 <div class="tabs">
   <div class="tab active" onclick="switchTab('p330')">330 Roddy Branch</div>
   <div class="tab" onclick="switchTab('p326')">326 Roddy Branch</div>
+  <div class="tab" onclick="switchTab('p600')">🏘 Peak Hill</div>
   <div class="tab" onclick="switchTab('timelog')">⏱ Time Log</div>
   <div class="tab" onclick="requireAdmin('admin')">⚙ Admin</div>
 </div>
@@ -439,6 +440,12 @@
     <div class="upload-progress" id="doc-progress-326"><div class="upload-progress-bar" id="doc-progress-bar-326"></div></div>
     <div class="doc-list" id="doc-list-326"></div>
   </div>
+</div>
+
+<!-- PEAK HILL AT WEST VIEW (600 Richmond Ave) -->
+<div class="view" id="view-p600">
+  <div id="peakhill"></div>
+  <div id="todo-600"></div>
 </div>
 
 <!-- TIME LOG -->
@@ -627,7 +634,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','active_punches','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids','ap_330','ap_326','ap_raw'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','active_punches','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids','ap_330','ap_326','ap_raw','gl_600','qb_balance_600','lots_600','devbudget_600','peakhill_models'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -758,8 +765,10 @@ function handleFirestoreUpdate(key) {
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); renderTodos('330'); renderTodos('326'); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
   else if (key === 'active_punches')  { renderClock(); renderClockedIn(); }
-  else if (key === 'todos')           { renderTodos('330'); renderTodos('326'); }
+  else if (key === 'todos')           { renderTodos('330'); renderTodos('326'); renderTodos('600'); }
   else if (key === 'bids')            { renderBids('330'); renderBids('326'); }
+  else if (key === 'gl_600' || key === 'qb_balance_600' || key === 'lots_600'
+        || key === 'devbudget_600' || key === 'peakhill_models') renderPeakHill();
 }
 
 // ─── QB REAL DATA (from balance sheet pulled 2026-06-04) ────────
@@ -767,6 +776,32 @@ const QB_INVENTORY = {
   '330': { balance: 420669.44, account: 'Inventory Asset:330 Roddy Branch', lastSync: '2026-06-04' },
   '326': { balance: 96088.10,  account: 'Inventory Asset:326 Roddy Branch', lastSync: '2026-06-04' }
 };
+
+// ─── PEAK HILL AT WEST VIEW — 14-lot development (600 Richmond Ave) ──────────
+// Phase 1 = a single running GL on the "600 Richmond Ave" Inventory Asset
+// sub-account captures all land + horizontal/site-development cost. That total
+// is then assessed across the 14 lots to set each lot's land+site basis. Each
+// lot later gets its own GL account for vertical (home) construction.
+const PEAKHILL = { name: 'Peak Hill at West View', address: '600 Richmond Ave', totalLots: 14, pricePerSqft: 275 };
+// Fallback running-GL balance until the gl_600 Make.com feed is live (pulled from
+// the QB balance sheet 2026-06-28). Mirrors QB_INVENTORY for 330/326.
+const PEAKHILL_QB = { balance: 283668.59, account: 'Inventory Asset:600 Richmond Ave', lastSync: '2026-06-28' };
+// Development-level budget categories (editable in the dashboard; only the
+// Dismal Creek site-work quote is a known figure — the rest default to 0).
+const PEAKHILL_BUDGET_DEFAULT = {
+  'Land Acquisition': 252281,                // closed 06/2022: $5,000 earnest + $247,331.18 title − $50 refund (QB acct 377 register)
+  'Site Development / Horizontal': 446660,   // Dismal Creek Excavating est. #1008 (02/20/2024)
+  'Permits, Engineering & Survey': 0,
+  'Erosion Control': 0,
+  'Contingency': 0
+};
+// Two house models; sale price = sqft × $275. Sqft starts at 0 — Jeff enters the
+// two model sqft once and every lot's target price computes automatically.
+const MODELS_DEFAULT = { '2BR': { name: 'Model B · 2 Bed', sqft: 0 }, '3BR': { name: '3 Bed', sqft: 0 } };
+const LOT_STATUSES = ['Planned', 'Site Prep', 'Ready to Build', 'Building', 'Listed', 'Sold'];
+const lotStatusClass = s => ({ 'Planned':'ms-not-ordered', 'Site Prep':'ms-ordered', 'Ready to Build':'ms-bid-in', 'Building':'ms-on-site', 'Listed':'ms-pending', 'Sold':'ms-installed' }[s] || 'ms-not-ordered');
+// 14 lots — first 7 are 2BR, last 7 are 3BR (each lot's model is editable).
+const LOTS_DEFAULT = Array.from({ length: 14 }, (_, i) => ({ id: 'L' + (i + 1), num: i + 1, model: i < 7 ? '2BR' : '3BR', buildCost: null, status: 'Planned' }));
 
 // ─── PLAN DATA (extracted from Laurelwood plans) ─────────────
 const PLAN_DATA = {
@@ -3339,7 +3374,7 @@ function changeAdminPin() {
 }
 
 // ─── TABS ──────────────────────────────────────────────────────
-const TAB_IDS = ['p330','p326','timelog','admin'];
+const TAB_IDS = ['p330','p326','p600','timelog','admin'];
 
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', TAB_IDS[i]===name));
@@ -3990,6 +4025,189 @@ function deleteBid(id) {
   if (proj) renderBids(proj);
 }
 
+// ═══ PEAK HILL — data accessors ═══════════════════════════════
+function getLots()      { const v = S.get('lots_600', null); return (Array.isArray(v) && v.length) ? v : LOTS_DEFAULT.map(l => ({ ...l })); }
+function getModels()    { const stored = S.get('peakhill_models', {}); return { '2BR': { ...MODELS_DEFAULT['2BR'], ...stored['2BR'] }, '3BR': { ...MODELS_DEFAULT['3BR'], ...stored['3BR'] } }; }
+function getDevBudget() { return { ...PEAKHILL_BUDGET_DEFAULT, ...S.get('devbudget_600', {}) }; }
+function lotSqft(lot, models) { return Number(models[lot.model]?.sqft) || 0; }
+function lotSale(lot, models) { return lotSqft(lot, models) * PEAKHILL.pricePerSqft; }
+
+// Live running-GL total for the 600 Richmond account (land + site dev to date).
+// Prefers the gl_600 register, then the qb_balance_600 doc, then the hardcoded
+// fallback — same precedence as the 330/326 budget snapshot.
+function peakHillSpent() {
+  const gl = S.get('gl_600', null);
+  const rows = parseGLRows(gl);
+  if (rows && rows.length) {
+    const t = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    return { balance: Math.round(t * 100) / 100, lastSync: gl?.lastSync || null, rows };
+  }
+  const qb = S.get('qb_balance_600', null);
+  return { balance: qb?.balance ?? PEAKHILL_QB.balance, lastSync: qb?.lastSync || PEAKHILL_QB.lastSync, rows: null };
+}
+
+// Light category router for the development GL (horizontal work, not home phases).
+function devCategorize(payee, memo) {
+  const s = ((payee || '') + ' ' + (memo || '')).toLowerCase();
+  if (/survey|engineer|permit|\bplat\b|zoning|impact fee|design/.test(s)) return 'Permits, Engineering & Survey';
+  if (/silt|erosion|swppp|seeding|straw|matting/.test(s))                  return 'Erosion Control';
+  if (/closing|title|deed|acre|land purchase|earnest/.test(s))             return 'Land Acquisition';
+  return 'Site Development / Horizontal';   // default: clearing, sewer, basins, roads, grading, etc.
+}
+function devSpentByCategory(rows) {
+  const out = {}; Object.keys(PEAKHILL_BUDGET_DEFAULT).forEach(k => out[k] = 0);
+  (rows || []).forEach(r => { const c = devCategorize(r.payee, r.memo); out[c] = (out[c] || 0) + (Number(r.amount) || 0); });
+  return out;
+}
+
+// ═══ PEAK HILL — render ═══════════════════════════════════════
+function renderPeakHill() {
+  const el = document.getElementById('peakhill');
+  if (!el) return;
+  const models = getModels(), lots = getLots(), db = getDevBudget();
+  const spentInfo = peakHillSpent();
+  const spent = spentInfo.balance;
+  const devTotal = Object.values(db).reduce((s, v) => s + (Number(v) || 0), 0);
+  const perLotBasis = devTotal > 0 ? Math.round(devTotal / PEAKHILL.totalLots) : 0;
+  const revenue = lots.reduce((s, l) => s + lotSale(l, models), 0);
+  const buildTotal = lots.reduce((s, l) => s + (Number(l.buildCost) || 0), 0);
+  const projCost = devTotal + buildTotal;
+  const profit = revenue - projCost;
+  const margin = revenue > 0 ? profit / revenue * 100 : 0;
+  const sold = lots.filter(l => l.status === 'Sold').length;
+  const syncTxt = spentInfo.lastSync ? `QB · ${spentInfo.lastSync}` : '';
+
+  // ── Card 1: Development Snapshot ──
+  const snapshot = `
+    <div class="card">
+      <div class="section-header">
+        <div class="card-title">Peak Hill at West View — Development Snapshot</div>
+        <span class="qb-live">● QB Live${syncTxt ? ' · ' + syncTxt : ''}</span>
+      </div>
+      <p class="click-hint">600 Richmond Ave · ${PEAKHILL.totalLots} lots · target sale ${fmt(PEAKHILL.pricePerSqft)}/sqft · ${sold}/${PEAKHILL.totalLots} sold</p>
+      <div class="budget-grid">
+        <div class="budget-item"><div class="b-label">Land + Site Invested</div><div class="b-value red">${fmt(spent)}</div></div>
+        <div class="budget-item"><div class="b-label">Development Budget</div><div class="b-value">${fmt(devTotal)}</div></div>
+        <div class="budget-item"><div class="b-label">Remaining to Spend</div><div class="b-value ${devTotal - spent < 0 ? 'red' : 'green'}">${fmt(devTotal - spent)}</div></div>
+        <div class="budget-item"><div class="b-label">Land+Site Basis / Lot</div><div class="b-value gold">${fmt(perLotBasis)}</div></div>
+        <div class="budget-item"><div class="b-label">Projected Revenue</div><div class="b-value gold">${fmt(revenue)}</div></div>
+        <div class="budget-item"><div class="b-label">Projected Gross Profit</div><div class="b-value ${profit < 0 ? 'red' : 'green'}">${fmt(profit)}${revenue > 0 ? ` · ${margin.toFixed(0)}%` : ''}</div></div>
+      </div>
+    </div>`;
+
+  // ── Card 2: Development Budget by Category ──
+  const cat = spentInfo.rows ? devSpentByCategory(spentInfo.rows) : null;
+  const budgetRows = Object.keys(db).map(k => {
+    const bud = Number(db[k]) || 0;
+    const act = cat ? (cat[k] || 0) : null;
+    const rem = act != null ? bud - act : null;
+    return `<tr>
+      <td>${esc(k)}</td>
+      <td style="text-align:right;"><input type="number" class="mat-input" style="width:120px;text-align:right;" value="${bud || ''}" placeholder="0" onchange="setDevBudget('${esc(k)}', this.value)"></td>
+      <td style="text-align:right;color:var(--text-muted);">${act != null ? fmt(act) : '—'}</td>
+      <td style="text-align:right;${rem != null && rem < 0 ? 'color:var(--red);' : ''}">${rem != null ? fmt(rem) : '—'}</td>
+    </tr>`;
+  }).join('');
+  const devBudgetCard = `
+    <div class="card">
+      <div class="section-header">
+        <div class="card-title">Development Budget — Horizontal / Site</div>
+        <span class="badge badge-gold">${fmt(devTotal)} budget</span>
+      </div>
+      <p class="click-hint">Edit any budget figure inline. “QB Actual” fills in once the 600 Richmond GL feed is live. Site Development seeded from the Dismal Creek Excavating quote (#1008, ${fmt(446660)}).</p>
+      <table class="data-table" style="width:100%;">
+        <thead><tr><th>Category</th><th style="text-align:right;">Budget</th><th style="text-align:right;">QB Actual</th><th style="text-align:right;">Remaining</th></tr></thead>
+        <tbody>${budgetRows}
+          <tr style="font-weight:700;border-top:2px solid var(--border);">
+            <td>Total</td><td style="text-align:right;">${fmt(devTotal)}</td>
+            <td style="text-align:right;">${cat ? fmt(spent) : '—'}</td>
+            <td style="text-align:right;${devTotal - spent < 0 ? 'color:var(--red);' : ''}">${cat ? fmt(devTotal - spent) : '—'}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+
+  // ── Card 3: Lot Inventory ──
+  const lotRows = lots.map(l => {
+    const sq = lotSqft(l, models);
+    const sale = lotSale(l, models);
+    const build = Number(l.buildCost) || 0;
+    const lotProfit = sale - perLotBasis - build;
+    return `<tr>
+      <td style="font-weight:700;">Lot ${l.num}</td>
+      <td><select class="mat-input" style="width:84px;" onchange="setLotField('${l.id}','model',this.value)">
+        <option value="2BR"${l.model === '2BR' ? ' selected' : ''}>2 Bed</option>
+        <option value="3BR"${l.model === '3BR' ? ' selected' : ''}>3 Bed</option>
+      </select></td>
+      <td style="text-align:right;color:var(--text-muted);">${sq ? sq.toLocaleString() : '—'}</td>
+      <td style="text-align:right;">${sale ? fmt(sale) : '—'}</td>
+      <td style="text-align:right;color:var(--text-muted);">${perLotBasis ? fmt(perLotBasis) : '—'}</td>
+      <td style="text-align:right;"><input type="number" class="mat-input" style="width:104px;text-align:right;" value="${l.buildCost || ''}" placeholder="0" onchange="setLotField('${l.id}','buildCost',this.value)"></td>
+      <td style="text-align:right;${lotProfit < 0 ? 'color:var(--red);' : 'color:var(--green);'}">${(sale || build) ? fmt(lotProfit) : '—'}</td>
+      <td><span class="mat-status ${lotStatusClass(l.status)} clickable" onclick="cycleLotStatus('${l.id}')" title="Click to advance status">${l.status}</span></td>
+    </tr>`;
+  }).join('');
+  const lotCard = `
+    <div class="card">
+      <div class="section-header">
+        <div class="card-title">Lot Inventory — ${PEAKHILL.totalLots} Lots</div>
+        <span class="badge badge-gray">${lots.filter(l => l.model === '2BR').length} × 2BR · ${lots.filter(l => l.model === '3BR').length} × 3BR</span>
+      </div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">
+        <div><div class="s-lbl" style="margin-bottom:4px;">2 Bed model sqft</div>
+          <input type="number" class="mat-input" style="width:130px;" value="${models['2BR'].sqft || ''}" placeholder="e.g. 1200" onchange="setModelSqft('2BR',this.value)"></div>
+        <div><div class="s-lbl" style="margin-bottom:4px;">3 Bed model sqft</div>
+          <input type="number" class="mat-input" style="width:130px;" value="${models['3BR'].sqft || ''}" placeholder="e.g. 1500" onchange="setModelSqft('3BR',this.value)"></div>
+        <div style="font-size:0.75rem;color:var(--text-muted);max-width:280px;">Target sale = model sqft × ${fmt(PEAKHILL.pricePerSqft)}. Land+Site basis per lot = development budget ÷ ${PEAKHILL.totalLots}, assessed live as site work is booked.</div>
+      </div>
+      <table class="data-table" style="width:100%;">
+        <thead><tr><th>Lot</th><th>Model</th><th style="text-align:right;">Sqft</th><th style="text-align:right;">Target Sale</th><th style="text-align:right;">Land+Site Basis</th><th style="text-align:right;">Est. Build Cost</th><th style="text-align:right;">Proj. Profit</th><th>Status</th></tr></thead>
+        <tbody>${lotRows}
+          <tr style="font-weight:700;border-top:2px solid var(--border);">
+            <td>Total</td><td></td><td></td>
+            <td style="text-align:right;">${fmt(revenue)}</td>
+            <td style="text-align:right;">${fmt(devTotal)}</td>
+            <td style="text-align:right;">${fmt(buildTotal)}</td>
+            <td style="text-align:right;${profit < 0 ? 'color:var(--red);' : 'color:var(--green);'}">${fmt(profit)}</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+
+  el.innerHTML = snapshot + devBudgetCard + lotCard;
+}
+
+// ═══ PEAK HILL — edit handlers (site is PIN-gated; edits save directly) ════
+function setDevBudget(cat, val) {
+  const db = S.get('devbudget_600', {});
+  db[cat] = Number(val) || 0;
+  S.set('devbudget_600', db);
+  renderPeakHill();
+}
+function setModelSqft(model, val) {
+  const m = S.get('peakhill_models', {});
+  m[model] = { ...getModels()[model], sqft: Number(val) || 0 };
+  S.set('peakhill_models', m);
+  renderPeakHill();
+}
+function setLotField(id, field, val) {
+  const lots = getLots();
+  const lot = lots.find(l => l.id === id);
+  if (!lot) return;
+  lot[field] = field === 'model' ? val : (val === '' ? null : Number(val));
+  S.set('lots_600', lots);
+  renderPeakHill();
+}
+function cycleLotStatus(id) {
+  const lots = getLots();
+  const lot = lots.find(l => l.id === id);
+  if (!lot) return;
+  lot.status = LOT_STATUSES[(LOT_STATUSES.indexOf(lot.status) + 1) % LOT_STATUSES.length];
+  S.set('lots_600', lots);
+  renderPeakHill();
+}
+
 function init() {
   initGate();
   initCollapse();
@@ -4003,8 +4221,9 @@ function init() {
   renderMaterials('330'); renderMaterials('326');
   renderFinishes('330'); renderFinishes('326');
   renderLoan('326');
-  renderTodos('330'); renderTodos('326');
+  renderTodos('330'); renderTodos('326'); renderTodos('600');
   renderBids('330'); renderBids('326');
+  renderPeakHill();
   checkTodoReminders(false);
   refreshEmployeeSelects();
   refreshProjectDropdown();
