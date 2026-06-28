@@ -785,7 +785,7 @@ const QB_INVENTORY = {
 // buildPerSqft = est. construction cost per finished sqft, from the completed 210
 // Seventh St "Model B" build: $194,864 inflated construction ÷ 1,122 sf = ~$173.68.
 // Each lot's est. build cost = buildPerSqft × that model's sqft.
-const PEAKHILL = { name: 'Peak Hill at West View', address: '600 Richmond Ave', totalLots: 14, pricePerSqft: 275, buildPerSqft: 173.68 };
+const PEAKHILL = { name: 'Peak Hill at West View', address: '600 Richmond Ave', totalLots: 14, pricePerSqft: 275, buildPerSqft: 173.68, commissionRate: 0.03 };
 // Fallback running-GL balance until the gl_600 Make.com feed is live (pulled from
 // the QB balance sheet 2026-06-28). Mirrors QB_INVENTORY for 330/326.
 const PEAKHILL_QB = { balance: 283668.59, account: 'Inventory Asset:600 Richmond Ave', lastSync: '2026-06-28' };
@@ -4082,8 +4082,12 @@ function renderPeakHill() {
   const revenue = lots.reduce((s, l) => s + lotSale(l, models), 0);
   const buildTotal = lots.reduce((s, l) => s + lotBuild(l, models), 0);
   const projCost = devTotal + buildTotal;
-  const profit = revenue - projCost;
+  const profit = revenue - projCost;                              // gross, before commission
   const margin = revenue > 0 ? profit / revenue * 100 : 0;
+  const commission = Math.round(revenue * PEAKHILL.commissionRate); // 3% realtor commission on sales
+  const netProfit = profit - commission;                          // net, after commission
+  const netMargin = revenue > 0 ? netProfit / revenue * 100 : 0;
+  const totalReturn = projCost > 0 ? netProfit / projCost * 100 : 0; // ROI on total project cost
   const sold = lots.filter(l => l.status === 'Sold').length;
   const syncTxt = spentInfo.lastSync ? `QB · ${spentInfo.lastSync}` : '';
 
@@ -4101,7 +4105,11 @@ function renderPeakHill() {
         <div class="budget-item"><div class="b-label">Remaining to Spend</div><div class="b-value ${devTotal - spent < 0 ? 'red' : 'green'}">${fmt(devTotal - spent)}</div></div>
         <div class="budget-item"><div class="b-label">Land+Site Basis / Lot</div><div class="b-value gold">${fmt(perLotBasis)}</div></div>
         <div class="budget-item"><div class="b-label">Projected Revenue</div><div class="b-value gold">${fmt(revenue)}</div></div>
-        <div class="budget-item"><div class="b-label">Projected Gross Profit</div><div class="b-value ${profit < 0 ? 'red' : 'green'}">${fmt(profit)}${revenue > 0 ? ` · ${margin.toFixed(0)}%` : ''}</div></div>
+        <div class="budget-item"><div class="b-label">Total Project Cost</div><div class="b-value">${fmt(projCost)}</div></div>
+        <div class="budget-item"><div class="b-label">Gross Profit</div><div class="b-value ${profit < 0 ? 'red' : 'green'}">${fmt(profit)}${revenue > 0 ? ` · ${margin.toFixed(0)}%` : ''}</div></div>
+        <div class="budget-item"><div class="b-label">Realtor Commission (3%)</div><div class="b-value red">${revenue > 0 ? '−' + fmt(commission) : '—'}</div></div>
+        <div class="budget-item"><div class="b-label">Net Profit (after comm.)</div><div class="b-value ${netProfit < 0 ? 'red' : 'green'}">${fmt(netProfit)}${revenue > 0 ? ` · ${netMargin.toFixed(0)}%` : ''}</div></div>
+        <div class="budget-item"><div class="b-label">Total Return (Net ÷ Cost)</div><div class="b-value ${netProfit < 0 ? 'red' : 'gold'}">${projCost > 0 ? totalReturn.toFixed(1) + '%' : '—'}</div></div>
       </div>
     </div>`;
 
@@ -4170,7 +4178,7 @@ function renderPeakHill() {
           <input type="number" class="mat-input" style="width:120px;" value="${models['3BR'].sqft || ''}" placeholder="e.g. 1500" onchange="setModelSqft('3BR',this.value)"></div>
         <div><div class="s-lbl" style="margin-bottom:4px;">Construction $/sqft</div>
           <input type="number" step="0.01" class="mat-input" style="width:120px;" value="${getBuildPsf() || ''}" placeholder="0" onchange="setBuildPsf(this.value)"></div>
-        <div style="font-size:0.75rem;color:var(--text-muted);max-width:320px;">Target sale = model sqft × ${fmt(PEAKHILL.pricePerSqft)}. Est. build cost = construction $/sqft × model sqft. The $/sqft default (${fmt(Math.round(getBuildPsf()))}) comes from your completed 210 Seventh St "Model B" build: $194,864 inflated construction ÷ 1,122 sf. Land+Site basis per lot = development budget ÷ ${PEAKHILL.totalLots}. Edit a lot's Est. Build Cost cell to override just that lot.</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);max-width:320px;">Target sale = model sqft × ${fmt(PEAKHILL.pricePerSqft)}. Est. build cost = construction $/sqft × model sqft. The $/sqft default (${fmt(Math.round(getBuildPsf()))}) comes from your completed 210 Seventh St "Model B" build: $194,864 inflated construction ÷ 1,122 sf. Land+Site basis per lot = development budget ÷ ${PEAKHILL.totalLots}. Edit a lot's Est. Build Cost cell to override just that lot. Per-lot Proj. Profit is gross; the 3% realtor commission and net return are in the snapshot above.</div>
       </div>
       <table class="data-table" style="width:100%;">
         <thead><tr><th>Lot</th><th>Model</th><th style="text-align:right;">Sqft</th><th style="text-align:right;">Target Sale</th><th style="text-align:right;">Land+Site Basis</th><th style="text-align:right;">Est. Build Cost</th><th style="text-align:right;">Proj. Profit</th><th>Status</th></tr></thead>
