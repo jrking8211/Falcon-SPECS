@@ -634,7 +634,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','active_punches','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids','ap_330','ap_326','ap_raw','gl_600','qb_balance_600','lots_600','devbudget_600','peakhill_models'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','active_punches','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids','ap_330','ap_326','ap_raw','gl_600','qb_balance_600','lots_600','devbudget_600','peakhill_models','peakhill_buildpsf'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -768,7 +768,7 @@ function handleFirestoreUpdate(key) {
   else if (key === 'todos')           { renderTodos('330'); renderTodos('326'); renderTodos('600'); }
   else if (key === 'bids')            { renderBids('330'); renderBids('326'); }
   else if (key === 'gl_600' || key === 'qb_balance_600' || key === 'lots_600'
-        || key === 'devbudget_600' || key === 'peakhill_models') renderPeakHill();
+        || key === 'devbudget_600' || key === 'peakhill_models' || key === 'peakhill_buildpsf') renderPeakHill();
 }
 
 // ─── QB REAL DATA (from balance sheet pulled 2026-06-04) ────────
@@ -782,7 +782,10 @@ const QB_INVENTORY = {
 // sub-account captures all land + horizontal/site-development cost. That total
 // is then assessed across the 14 lots to set each lot's land+site basis. Each
 // lot later gets its own GL account for vertical (home) construction.
-const PEAKHILL = { name: 'Peak Hill at West View', address: '600 Richmond Ave', totalLots: 14, pricePerSqft: 275 };
+// buildPerSqft = est. construction cost per finished sqft, from the completed 210
+// Seventh St "Model B" build: $194,864 inflated construction ÷ 1,122 sf = ~$173.68.
+// Each lot's est. build cost = buildPerSqft × that model's sqft.
+const PEAKHILL = { name: 'Peak Hill at West View', address: '600 Richmond Ave', totalLots: 14, pricePerSqft: 275, buildPerSqft: 173.68 };
 // Fallback running-GL balance until the gl_600 Make.com feed is live (pulled from
 // the QB balance sheet 2026-06-28). Mirrors QB_INVENTORY for 330/326.
 const PEAKHILL_QB = { balance: 283668.59, account: 'Inventory Asset:600 Richmond Ave', lastSync: '2026-06-28' };
@@ -797,7 +800,10 @@ const PEAKHILL_BUDGET_DEFAULT = {
 };
 // Two house models; sale price = sqft × $275. Sqft starts at 0 — Jeff enters the
 // two model sqft once and every lot's target price computes automatically.
-const MODELS_DEFAULT = { '2BR': { name: 'Model B · 2 Bed', sqft: 0 }, '3BR': { name: '3 Bed', sqft: 0 } };
+// 2BR = the built "Model B" (210 Seventh St / JKE201 plans), total finished 1,122 sf.
+// Build cost is derived from buildPerSqft × sqft (see PEAKHILL.buildPerSqft), so no
+// per-model dollar figure here. 3BR sqft TBD (no 3BR plan yet) — enter once set.
+const MODELS_DEFAULT = { '2BR': { name: 'Model B · 2 Bed', sqft: 1122 }, '3BR': { name: '3 Bed', sqft: 0 } };
 const LOT_STATUSES = ['Planned', 'Site Prep', 'Ready to Build', 'Building', 'Listed', 'Sold'];
 const lotStatusClass = s => ({ 'Planned':'ms-not-ordered', 'Site Prep':'ms-ordered', 'Ready to Build':'ms-bid-in', 'Building':'ms-on-site', 'Listed':'ms-pending', 'Sold':'ms-installed' }[s] || 'ms-not-ordered');
 // 14 lots — first 7 are 2BR, last 7 are 3BR (each lot's model is editable).
@@ -4031,6 +4037,10 @@ function getModels()    { const stored = S.get('peakhill_models', {}); return { 
 function getDevBudget() { return { ...PEAKHILL_BUDGET_DEFAULT, ...S.get('devbudget_600', {}) }; }
 function lotSqft(lot, models) { return Number(models[lot.model]?.sqft) || 0; }
 function lotSale(lot, models) { return lotSqft(lot, models) * PEAKHILL.pricePerSqft; }
+// Construction $/sqft — editable average, defaulting to the 210-derived figure.
+function getBuildPsf() { const v = S.get('peakhill_buildpsf', null); return v != null ? Number(v) : PEAKHILL.buildPerSqft; }
+// Per-lot build cost = the lot's own override if set, else $/sqft × the model's sqft.
+function lotBuild(lot, models) { return lot.buildCost != null ? Number(lot.buildCost) : Math.round(getBuildPsf() * lotSqft(lot, models)); }
 
 // Live running-GL total for the 600 Richmond account (land + site dev to date).
 // Prefers the gl_600 register, then the qb_balance_600 doc, then the hardcoded
@@ -4070,7 +4080,7 @@ function renderPeakHill() {
   const devTotal = Object.values(db).reduce((s, v) => s + (Number(v) || 0), 0);
   const perLotBasis = devTotal > 0 ? Math.round(devTotal / PEAKHILL.totalLots) : 0;
   const revenue = lots.reduce((s, l) => s + lotSale(l, models), 0);
-  const buildTotal = lots.reduce((s, l) => s + (Number(l.buildCost) || 0), 0);
+  const buildTotal = lots.reduce((s, l) => s + lotBuild(l, models), 0);
   const projCost = devTotal + buildTotal;
   const profit = revenue - projCost;
   const margin = revenue > 0 ? profit / revenue * 100 : 0;
@@ -4131,7 +4141,7 @@ function renderPeakHill() {
   const lotRows = lots.map(l => {
     const sq = lotSqft(l, models);
     const sale = lotSale(l, models);
-    const build = Number(l.buildCost) || 0;
+    const build = lotBuild(l, models);
     const lotProfit = sale - perLotBasis - build;
     return `<tr>
       <td style="font-weight:700;">Lot ${l.num}</td>
@@ -4142,7 +4152,7 @@ function renderPeakHill() {
       <td style="text-align:right;color:var(--text-muted);">${sq ? sq.toLocaleString() : '—'}</td>
       <td style="text-align:right;">${sale ? fmt(sale) : '—'}</td>
       <td style="text-align:right;color:var(--text-muted);">${perLotBasis ? fmt(perLotBasis) : '—'}</td>
-      <td style="text-align:right;"><input type="number" class="mat-input" style="width:104px;text-align:right;" value="${l.buildCost || ''}" placeholder="0" onchange="setLotField('${l.id}','buildCost',this.value)"></td>
+      <td style="text-align:right;"><input type="number" class="mat-input" style="width:104px;text-align:right;" value="${build || ''}" placeholder="0" onchange="setLotField('${l.id}','buildCost',this.value)"></td>
       <td style="text-align:right;${lotProfit < 0 ? 'color:var(--red);' : 'color:var(--green);'}">${(sale || build) ? fmt(lotProfit) : '—'}</td>
       <td><span class="mat-status ${lotStatusClass(l.status)} clickable" onclick="cycleLotStatus('${l.id}')" title="Click to advance status">${l.status}</span></td>
     </tr>`;
@@ -4155,10 +4165,12 @@ function renderPeakHill() {
       </div>
       <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">
         <div><div class="s-lbl" style="margin-bottom:4px;">2 Bed model sqft</div>
-          <input type="number" class="mat-input" style="width:130px;" value="${models['2BR'].sqft || ''}" placeholder="e.g. 1200" onchange="setModelSqft('2BR',this.value)"></div>
+          <input type="number" class="mat-input" style="width:120px;" value="${models['2BR'].sqft || ''}" placeholder="e.g. 1200" onchange="setModelSqft('2BR',this.value)"></div>
         <div><div class="s-lbl" style="margin-bottom:4px;">3 Bed model sqft</div>
-          <input type="number" class="mat-input" style="width:130px;" value="${models['3BR'].sqft || ''}" placeholder="e.g. 1500" onchange="setModelSqft('3BR',this.value)"></div>
-        <div style="font-size:0.75rem;color:var(--text-muted);max-width:280px;">Target sale = model sqft × ${fmt(PEAKHILL.pricePerSqft)}. Land+Site basis per lot = development budget ÷ ${PEAKHILL.totalLots}, assessed live as site work is booked.</div>
+          <input type="number" class="mat-input" style="width:120px;" value="${models['3BR'].sqft || ''}" placeholder="e.g. 1500" onchange="setModelSqft('3BR',this.value)"></div>
+        <div><div class="s-lbl" style="margin-bottom:4px;">Construction $/sqft</div>
+          <input type="number" step="0.01" class="mat-input" style="width:120px;" value="${getBuildPsf() || ''}" placeholder="0" onchange="setBuildPsf(this.value)"></div>
+        <div style="font-size:0.75rem;color:var(--text-muted);max-width:320px;">Target sale = model sqft × ${fmt(PEAKHILL.pricePerSqft)}. Est. build cost = construction $/sqft × model sqft. The $/sqft default (${fmt(Math.round(getBuildPsf()))}) comes from your completed 210 Seventh St "Model B" build: $194,864 inflated construction ÷ 1,122 sf. Land+Site basis per lot = development budget ÷ ${PEAKHILL.totalLots}. Edit a lot's Est. Build Cost cell to override just that lot.</div>
       </div>
       <table class="data-table" style="width:100%;">
         <thead><tr><th>Lot</th><th>Model</th><th style="text-align:right;">Sqft</th><th style="text-align:right;">Target Sale</th><th style="text-align:right;">Land+Site Basis</th><th style="text-align:right;">Est. Build Cost</th><th style="text-align:right;">Proj. Profit</th><th>Status</th></tr></thead>
@@ -4189,6 +4201,10 @@ function setModelSqft(model, val) {
   const m = S.get('peakhill_models', {});
   m[model] = { ...getModels()[model], sqft: Number(val) || 0 };
   S.set('peakhill_models', m);
+  renderPeakHill();
+}
+function setBuildPsf(val) {
+  S.set('peakhill_buildpsf', Number(val) || 0);
   renderPeakHill();
 }
 function setLotField(id, field, val) {
