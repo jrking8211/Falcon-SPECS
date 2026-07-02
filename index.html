@@ -3373,12 +3373,19 @@ function renderBudgetEditor() {
   container.innerHTML = projects.map(p => {
     const stored = S.get('budget_'+p.k, null);
     const b = stored || getDefaultBudget(p.k);
+    // Live Inventory Asset balance — same resolution the dashboard uses: the
+    // nightly GL register sum first, then the qb_balance doc, then fallbacks.
+    const glc = computePhases(p.k);
+    const qbDoc = S.get('qb_balance_'+p.k, null);
+    const liveBal = glc.balance ?? qbDoc?.balance ?? b.qbBalance ?? QB_INVENTORY[p.k].balance;
+    const syncDate = glc.lastSync || qbDoc?.lastSync || QB_INVENTORY[p.k].lastSync;
     return `<div style="margin-bottom:20px;">
       <div style="font-weight:700;color:var(--gold);margin-bottom:10px;">${p.n}</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:10px;">
         <div class="form-group">
           <label>QB Inventory Asset Balance</label>
-          <input type="number" id="b-${p.k}-qbBalance" value="${b.qbBalance||''}" placeholder="From QB Balance Sheet" min="0">
+          <input type="number" value="${liveBal}" disabled title="Auto-synced daily from the QuickBooks General Ledger">
+          <span style="font-size:0.68rem;color:var(--text-muted);">Live from QB · synced ${syncDate}</span>
         </div>
         <div class="form-group">
           <label>Total Cost Budget</label>
@@ -3396,9 +3403,10 @@ function renderBudgetEditor() {
 }
 
 function saveBudget(proj, name) {
-  const fields = ['qbBalance','projectedSalePrice'];
-  const b = {};
-  fields.forEach(f => { b[f] = parseFloat(document.getElementById(`b-${proj}-${f}`)?.value)||0; });
+  // qbBalance is now derived live from the QB sync (read-only display), so only
+  // the projected sale price is admin-editable here.
+  const b = S.get('budget_'+proj, null) || {};
+  b.projectedSalePrice = parseFloat(document.getElementById(`b-${proj}-projectedSalePrice`)?.value)||0;
   b.lastSync = new Date().toISOString().slice(0,10);
   S.set('budget_'+proj, b);
   renderBudget(proj);
