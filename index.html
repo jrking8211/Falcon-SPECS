@@ -543,8 +543,6 @@
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
       <select id="filter-project" onchange="renderAdminEntries()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);outline:none;font-size:0.85rem;">
         <option value="">All Projects</option>
-        <option value="330 Roddy Branch">330 Roddy Branch</option>
-        <option value="326 Roddy Branch">326 Roddy Branch</option>
       </select>
       <select id="filter-employee" onchange="renderAdminEntries()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);outline:none;font-size:0.85rem;">
         <option value="">All Employees</option>
@@ -634,7 +632,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','active_punches','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids','ap_330','ap_326','ap_raw','gl_600','qb_balance_600','lots_600','devbudget_600','peakhill_models','peakhill_buildpsf'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','active_punches','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids','ap_330','ap_326','ap_raw','gl_600','qb_balance_600','lots_600','devbudget_600','peakhill_models','peakhill_buildpsf','qb_projects'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -765,6 +763,7 @@ function handleFirestoreUpdate(key) {
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); renderTodos('330'); renderTodos('326'); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
   else if (key === 'active_punches')  { renderClock(); renderClockedIn(); }
+  else if (key === 'qb_projects')     { refreshProjectDropdown(); refreshClockDropdowns(); refreshProjectFilterDropdown(); }
   else if (key === 'todos')           { renderTodos('330'); renderTodos('326'); renderTodos('600'); }
   else if (key === 'bids')            { renderBids('330'); renderBids('326'); }
   else if (key === 'gl_600' || key === 'qb_balance_600' || key === 'lots_600'
@@ -1273,13 +1272,30 @@ const COST_CODES = [
   { code: '6205', label: '6205 – Project Supervision' },
 ];
 
+// Fallback jobs used only until the QuickBooks sync (below) populates.
+// Each name must match its QuickBooks job exactly so punches post to the right job.
+const TIME_TRACKING_PROJECTS = ['Old Cades Cove Project'];
+
+// Active projects for the time-tracking dropdowns.
+// Source of truth is the live QuickBooks feed: a Make.com scenario writes the
+// list of ACTIVE QuickBooks Projects to the synced 'qb_projects' key (the
+// Project name is what the punch posts to, so employees bill the right job).
+// Until that feed populates, fall back to the built-in PLAN_DATA projects.
 function getActiveProjects() {
-  return Object.entries(PLAN_DATA)
+  const synced = S.get('qb_projects', []);
+  if (Array.isArray(synced) && synced.length) {
+    return synced
+      .map(p => (typeof p === 'string' ? { key: p, name: p } : { key: p.id || p.name, name: p.name }))
+      .filter(p => p.name);
+  }
+  const planActive = Object.entries(PLAN_DATA)
     .filter(([key, p]) => {
       if (!p.sqftTotal) return false; // skip placeholder entries
       return phaseStageStatus(key, 'Listing / Sale').status !== 'done'; // not yet closed/sold
     })
     .map(([key, p]) => ({ key, name: p.name }));
+  const extra = TIME_TRACKING_PROJECTS.map(name => ({ key: name, name }));
+  return [...planActive, ...extra];
 }
 
 function refreshProjectDropdown() {
@@ -1887,7 +1903,21 @@ function renderMyEntries() {
 }
 
 // ─── ADMIN ENTRIES ─────────────────────────────────────────────
+// Populate the admin project filter from the live active-project list plus any
+// projects that already appear in logged entries (so closed jobs stay filterable).
+function refreshProjectFilterDropdown() {
+  const sel = document.getElementById('filter-project');
+  if (!sel) return;
+  const prev = sel.value;
+  const names = new Set(getActiveProjects().map(p => p.name));
+  S.get('timelogs', []).forEach(l => { if (l.project) names.add(l.project); });
+  sel.innerHTML = '<option value="">All Projects</option>' +
+    [...names].sort().map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+}
+
 function renderAdminEntries() {
+  refreshProjectFilterDropdown();
   const pf = document.getElementById('filter-project')?.value  || '';
   const ef = document.getElementById('filter-employee')?.value || '';
   const wf = document.getElementById('filter-week')?.value     || '';
@@ -4251,6 +4281,7 @@ function init() {
   checkTodoReminders(false);
   refreshEmployeeSelects();
   refreshProjectDropdown();
+  refreshProjectFilterDropdown();
   refreshCostCodeDropdown();
   renderClock();
   document.getElementById('sync-status').textContent =
