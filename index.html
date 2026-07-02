@@ -530,6 +530,15 @@
 
   <div class="card">
     <div class="section-header">
+      <div class="card-title">🗂 Time Clock Project List</div>
+      <button class="btn btn-secondary btn-sm" onclick="renderTtSelector()">Refresh</button>
+    </div>
+    <div class="info-box">This list mirrors your <strong>active QuickBooks projects</strong> and updates automatically as you activate/deactivate jobs in QuickBooks. <strong>Check</strong> the ones employees should see on the time clock.</div>
+    <div id="tt-selector"></div>
+  </div>
+
+  <div class="card">
+    <div class="section-header">
       <div class="card-title">All Time Entries</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-primary btn-sm" onclick="exportJournalCSV()">↓ Export QB Journal CSV</button>
@@ -632,7 +641,7 @@ const firebaseConfig = {
 };
 
 let db = null;
-const FS_KEYS = ['stages_330','stages_326','employees','timelogs','active_punches','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids','ap_330','ap_326','ap_raw','gl_600','qb_balance_600','lots_600','devbudget_600','peakhill_models','peakhill_buildpsf','qb_projects'];
+const FS_KEYS = ['stages_330','stages_326','employees','timelogs','active_punches','budget_330','budget_326','qb_balance_330','qb_balance_326','gl_330','gl_326','phasestages_330','phasestages_326','phasebudget_330','phasebudget_326','materials_330','materials_326','finishes_330','finishes_326','loan_326','loan_326_investor','market_data','listing_stats','permits','todos','bids','ap_330','ap_326','ap_raw','gl_600','qb_balance_600','lots_600','devbudget_600','peakhill_models','peakhill_buildpsf','qb_projects','tt_selected'];
 
 // ─── STORAGE — writes to localStorage + Firestore ─────────────
 const S = {
@@ -763,7 +772,8 @@ function handleFirestoreUpdate(key) {
   else if (key === 'employees')       { refreshEmployeeSelects(); renderEmployeeList(); renderTodos('330'); renderTodos('326'); }
   else if (key === 'timelogs')        { renderMyEntries(); renderAdminEntries(); }
   else if (key === 'active_punches')  { renderClock(); renderClockedIn(); }
-  else if (key === 'qb_projects')     { refreshProjectDropdown(); refreshClockDropdowns(); refreshProjectFilterDropdown(); }
+  else if (key === 'qb_projects')     { renderTtSelector(); }
+  else if (key === 'tt_selected')     { renderTtSelector(); refreshProjectDropdown(); refreshClockDropdowns(); refreshProjectFilterDropdown(); }
   else if (key === 'todos')           { renderTodos('330'); renderTodos('326'); renderTodos('600'); }
   else if (key === 'bids')            { renderBids('330'); renderBids('326'); }
   else if (key === 'gl_600' || key === 'qb_balance_600' || key === 'lots_600'
@@ -1276,18 +1286,32 @@ const COST_CODES = [
 // Each name must match its QuickBooks job exactly so punches post to the right job.
 const TIME_TRACKING_PROJECTS = ['Old Cades Cove Project'];
 
-// Active projects for the time-tracking dropdowns.
-// Source of truth is the live QuickBooks feed: a Make.com scenario writes the
-// list of ACTIVE QuickBooks Projects to the synced 'qb_projects' key (the
-// Project name is what the punch posts to, so employees bill the right job).
-// Until that feed populates, fall back to the built-in PLAN_DATA projects.
+// ── PROJECT LISTS ────────────────────────────────────────────
+// Two-tier model:
+//  • 'qb_projects'  — the FULL list of active QuickBooks projects, synced from
+//    a Make.com scenario. This is the admin menu.
+//  • 'tt_selected'  — the subset the admin checks off. This is what employees
+//    see on the time clock. The selected name is what a punch posts to QB.
+
+// Full menu of active QuickBooks projects (sorted, de-duped) for the admin selector.
+function getQbProjectList() {
+  const synced = (S.get('qb_projects', []) || [])
+    .map(p => (typeof p === 'string' ? p : (p && p.name)))
+    .filter(Boolean);
+  return Array.from(new Set(synced)).sort((a, b) => a.localeCompare(b));
+}
+
+// The projects the admin has chosen to expose on the employee time clock.
+function getSelectedProjects() {
+  return (S.get('tt_selected', []) || []).filter(Boolean);
+}
+
+// Projects shown in the employee clock + manual-entry dropdowns = the admin
+// selection. Falls back to the built-in spec homes + TIME_TRACKING_PROJECTS
+// until the admin has made a selection, so the dropdown is never empty.
 function getActiveProjects() {
-  const synced = S.get('qb_projects', []);
-  if (Array.isArray(synced) && synced.length) {
-    return synced
-      .map(p => (typeof p === 'string' ? { key: p, name: p } : { key: p.id || p.name, name: p.name }))
-      .filter(p => p.name);
-  }
+  const selected = getSelectedProjects();
+  if (selected.length) return selected.map(name => ({ key: name, name }));
   const planActive = Object.entries(PLAN_DATA)
     .filter(([key, p]) => {
       if (!p.sqftTotal) return false; // skip placeholder entries
@@ -1903,6 +1927,40 @@ function renderMyEntries() {
 }
 
 // ─── ADMIN ENTRIES ─────────────────────────────────────────────
+// ── TIME CLOCK PROJECT SELECTOR (admin) ───────────────────────
+// Shows every active QuickBooks project (synced menu) with a checkbox; the
+// checked set is saved to 'tt_selected' and drives the employee dropdowns.
+function renderTtSelector() {
+  const el = document.getElementById('tt-selector');
+  if (!el) return;
+  const menu = getQbProjectList();
+  const selected = new Set(getSelectedProjects());
+  if (!menu.length) {
+    el.innerHTML = '<div class="empty-state">No projects synced from QuickBooks yet. Once the QuickBooks sync runs, your active projects appear here automatically.</div>';
+    return;
+  }
+  const chosen = menu.filter(n => selected.has(n)).length;
+  el.innerHTML =
+    `<div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px;"><strong style="color:var(--text);">${chosen}</strong> of ${menu.length} selected</div>` +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px;">' +
+    menu.map(n => `
+      <label style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:0.85rem;">
+        <input type="checkbox" value="${esc(n)}" ${selected.has(n) ? 'checked' : ''} onchange="toggleTtProject(this.value, this.checked)">
+        <span>${esc(n)}</span>
+      </label>`).join('') +
+    '</div>';
+}
+
+function toggleTtProject(name, on) {
+  const cur = new Set(getSelectedProjects());
+  if (on) cur.add(name); else cur.delete(name);
+  S.set('tt_selected', [...cur]);
+  renderTtSelector();
+  refreshProjectDropdown();
+  refreshClockDropdowns();
+  refreshProjectFilterDropdown();
+}
+
 // Populate the admin project filter from the live active-project list plus any
 // projects that already appear in logged entries (so closed jobs stay filterable).
 function refreshProjectFilterDropdown() {
@@ -3417,7 +3475,7 @@ function switchTab(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   const view = document.getElementById('view-'+name);
   if (view) view.classList.add('active');
-  if (name==='admin') { renderAdminEntries(); renderBudgetEditor(); renderEmployeeList(); refreshEmployeeSelects(); renderClockedIn(); }
+  if (name==='admin') { renderTtSelector(); renderAdminEntries(); renderBudgetEditor(); renderEmployeeList(); refreshEmployeeSelects(); renderClockedIn(); }
   if (name==='timelog') { refreshEmployeeSelects(); renderClock(); }
   buildSectionNav();
 }
@@ -4283,6 +4341,7 @@ function init() {
   refreshProjectDropdown();
   refreshProjectFilterDropdown();
   refreshCostCodeDropdown();
+  renderTtSelector();
   renderClock();
   document.getElementById('sync-status').textContent =
     'QB sync ' + new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'});
