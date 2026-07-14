@@ -1378,6 +1378,8 @@ function renderStages(project) {
     const st = { done: base.done, total: base.total, status: statusByPhase[ph] || base.status };
     totalDone += st.done; totalStages += st.total;
     const color = PHASE_STATUS_COLOR[st.status];
+    // In-progress stages count half toward the phase's completion bar.
+    const pct = st.total ? Math.round((st.done + base.started * 0.5) / st.total * 100) : 0;
     const stagesHtml = PHASE_STAGES[ph].map((name, si) => {
       const s = store[ph + '::' + name] || 'none';
       const icon = s === 'complete' ? '✓' : s === 'in-progress' ? '●' : '';
@@ -1392,8 +1394,9 @@ function renderStages(project) {
     return `<div class="phase-group">
       <div class="phase-group-header">
         <span class="phase-group-title" style="border-left:3px solid ${color};">${ph}</span>
-        <span class="phase-group-count" style="color:${color};">${st.done}/${st.total} · ${PHASE_STATUS_LABEL[st.status]}</span>
+        <span class="phase-group-count" style="color:${color};">${st.done}/${st.total} · ${pct}% · ${PHASE_STATUS_LABEL[st.status]}</span>
       </div>
+      <div class="phase-bar-track" style="margin:-4px 0 8px;" title="${pct}% complete"><div class="phase-bar-fill" style="width:${pct}%;background:${color};"></div></div>
       <div class="stages-grid">${stagesHtml}</div>
     </div>`;
   }).join('');
