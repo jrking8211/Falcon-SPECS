@@ -882,7 +882,7 @@ const PLAN_DATA = {
     beds: 4, baths: 3,
     stories: '1.5',
     mls: '#1343836',
-    listPrice: 775000,
+    listPrice: 789000,
     listDate: '2026-06-08',   // MLS list date — days-on-market computes from this automatically
     listingUrl: 'https://www.zillow.com/homedetails/326-Roddy-Branch-Rd-Rockford-TN-37853/345676770_zpid/',
     listingDesc: 'New construction by Falcon Development, built on a floor plan similar to the neighboring 330 Roddy Branch. Oversized lot between Maryville and Knoxville with everything you need on the main floor. 4 bed / 3 full bath — 3 bedrooms on the main level plus a private upstairs bedroom or bonus room with its own full bath, ideal for guests, a home office, or extra living space. Open-concept layout flows from the living area into the kitchen and dining and out to the covered back porch for effortless indoor-outdoor entertaining. Country-style living just minutes from Pellissippi Parkway, with quick access to downtown Knoxville, Maryville, shopping and dining. Features: tile showers, high-end LVP throughout, fireplace, kitchen island, butler\'s pantry, and a separate laundry room.',
@@ -914,9 +914,9 @@ const PLAN_DATA = {
       'Landscaping & Grading':     { projected: 12000,  note: 'Final grade, seed/sod, minimal landscaping' },
       'Contingency (5%)':          { projected: 26000,  note: '~5% buffer — steeper roof and dormer add risk' },
     },
-    projectedSalePrice: 775000,
+    projectedSalePrice: 789000,
     commissionRate: 0.03,
-    compNotes: 'Mirror of 330 (4bd/3ba) with a steeper 9:12 roof + dormer and right-entry garage. At the $282/sqft comp basis, 2,796 sqft supports a list near $789K–$799K at completion; the $775K target is conservative.'
+    compNotes: 'Active on MLS at $789,000 (~$282/sqft), 4bd/3ba — raised from the original $775,000 list on 7/14/26. Mirror of 330 with a steeper 9:12 roof + dormer and right-entry garage; the $282/sqft comp basis supports the increase.'
   }
 };
 
@@ -1225,7 +1225,7 @@ const MATERIALS = {
     { id: 'main-lvp',         item: 'Main level LVP (2,180 SF)', vendor: 'Cella Flooring & Design', cost: 14933, status: 'ordered', neededBy: '2026-06-22' },
     { id: 'bonus-carpet',     item: 'Bonus room + stairs carpet (816 SF)', vendor: 'Cella Flooring & Design', cost: 4122, status: 'ordered', neededBy: '2026-07-10' },
     { id: 'cella-proposal',   item: 'Cella — proposal accepted', vendor: 'Net terms (no deposit)', cost: 0, status: 'installed', neededBy: '2026-05-25', selection: true },
-    { id: 'trim',             item: 'Trim package', vendor: 'Witt Building Material', cost: 0, status: 'ordered', neededBy: '2026-06-08' },
+    { id: 'trim',             item: 'Interior trim package', vendor: 'Witt Building Material', cost: 0, status: 'ordered', neededBy: '2026-06-08' }, // "Interior" so it routes to Interior Finishes, not Witt's default Framing phase (was mislabeling floor-truss spend)
     { id: 'int-doors',        item: 'Interior doors', vendor: 'TBD', cost: 0, status: 'ordered', neededBy: '2026-06-15' },
     { id: 'plumbing-rough',   item: 'Plumbing rough-in + materials (incl. upstairs bath add-on)', vendor: 'Priority Plumbing LLC', cost: 9000, status: 'ordered', neededBy: '2026-06-25' },
     { id: 'elec-fixtures',    item: 'Electrical fixtures', vendor: 'Phoenix Electric / TBD', cost: 0, status: 'not-ordered', neededBy: '2026-07-05' },
@@ -3753,7 +3753,7 @@ function seedEmployees() {
   if (S.get('employees', []).length > 0) return;
   const qbEmployees = [
     { name: 'Thomas K. Smith', pin: '1010', qbId: '1010', hourlyRate: 36.06 },
-    { name: 'Frank Hester',    pin: '1306', qbId: '1306', hourlyRate: 20.00 }
+    { name: 'Frank Hester',    pin: '1306', qbId: '1306', hourlyRate: 25.00 }
   ];
   // Use setLocal only — Firestore onSnapshot will provide real data if it exists
   S.setLocal('employees', qbEmployees);
