@@ -3126,8 +3126,17 @@ function renderMaterials(project) {
           bidRows.forEach(br => { const d = Math.abs(a - br.est); if (d < bd && d <= (br.est || 0) * 0.12) { bd = d; best = br; } });
           if (best) best.actual += a; else generic += a;
         });
+        // Leftover GL that matched no specific bid (e.g. many small framing-material
+        // invoices vs. one big package bid) rolls into the most-unfilled bid — the bulk
+        // "package" line — instead of a scope-less vendor row. Specific carve-outs like
+        // trusses already took their matched spend, so they won't absorb it.
+        if (generic > 0) {
+          let bulk = null, room = 0;
+          bidRows.forEach(br => { const gap = (br.est || 0) - (br.actual || 0); if (gap > room) { room = gap; bulk = br; } });
+          if (bulk) bulk.actual += generic;
+          else { const r = blank(name); r.actual = generic; rows[ph][key] = r; }
+        }
         bidRows.forEach(br => { rows[ph][key + '#' + br._bidId] = br; });
-        if (generic > 0) { const r = blank(name); r.actual = generic; rows[ph][key] = r; }
       } else {
         const r = blank(name);
         r.actual = amts.reduce((s, a) => s + a, 0);
