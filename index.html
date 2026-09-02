@@ -520,6 +520,17 @@
 
 <!-- ADMIN -->
 <div class="view" id="view-admin">
+  <div class="card" id="failed-time-card" style="display:none;border-color:rgba(239,68,68,0.4);">
+    <div class="section-header">
+      <div class="card-title" style="color:var(--red);">⚠️ Time Entries That Did Not Reach QuickBooks</div>
+      <button class="btn btn-secondary btn-sm" onclick="renderFailedTimeEntries()">Refresh</button>
+    </div>
+    <div class="info-box" style="background:rgba(239,68,68,0.08);border-color:rgba(239,68,68,0.25);">
+      These punches were saved on the dashboard, but QuickBooks rejected or timed out on them — so the hours are <strong>not</strong> in QuickBooks. <strong>Check QuickBooks first:</strong> an entry that timed out sometimes posts anyway, and re-sending would double-book the hours.
+    </div>
+    <div id="failed-time-list"></div>
+  </div>
+
   <div class="card">
     <div class="section-header">
       <div class="card-title">🟢 Currently Clocked In</div>
@@ -3557,6 +3568,7 @@ function initStorage() {
   loadPhotos('326');
   loadDocs('330');
   loadDocs('326');
+  loadFailedTimeEntries();
 }
 
 function loadPhotos(project) {
@@ -3641,6 +3653,87 @@ async function deletePhoto(project, docId, storagePath) {
   }
   await db.collection('photos_' + project).doc(docId).delete();
   toast('Photo deleted.');
+}
+
+// ─── FAILED TIME PUSHES ────────────────────────────────────────
+// The Make "Timeclock" scenario (id 5294056) pushes each clock-out to
+// QuickBooks. Its error route used to end in Skip, which silently DISCARDED
+// any entry QuickBooks rejected or timed out on — the run still logged
+// "Success" and the hours just vanished. It now writes the failed entry to
+// the 'timelogs_failed' collection first; this surfaces the unresolved ones.
+let failedTimeRows = [];
+
+function loadFailedTimeEntries() {
+  if (!db) return;
+  db.collection('timelogs_failed').onSnapshot(snap => {
+    failedTimeRows = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .filter(r => (r.status || 'unresolved') === 'unresolved')
+      .sort((a,b) => String(b.failedAt||'').localeCompare(String(a.failedAt||'')));
+    renderFailedTimeEntries();
+  });
+}
+
+function renderFailedTimeEntries() {
+  const card = document.getElementById('failed-time-card');
+  const list = document.getElementById('failed-time-list');
+  if (!card || !list) return;
+  if (!failedTimeRows.length) { card.style.display = 'none'; list.innerHTML = ''; return; }
+  card.style.display = '';
+  list.innerHTML = `<div class="table-wrap"><table class="data-table">
+    <thead><tr><th>Failed</th><th>Employee</th><th>Date</th><th>Project</th><th>Cost Code</th><th>Hrs</th><th>Description</th><th></th></tr></thead>
+    <tbody>${failedTimeRows.map(r => `<tr>
+      <td>${esc(String(r.failedAt||'').slice(0,16).replace('T',' '))}</td>
+      <td><strong>${esc(r.employee||'—')}</strong></td>
+      <td>${esc(r.date||'—')}</td>
+      <td>${esc(r.project||'—')}</td>
+      <td><span class="badge badge-gold">${esc(r.costCode||'—')}</span></td>
+      <td><strong>${esc(r.durationHHMM||'—')}</strong></td>
+      <td>${esc(r.description||'—')}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-secondary btn-sm" onclick="resendFailedTimeEntry('${esc(r.id)}')">↻ Re-send</button>
+        <button class="btn btn-danger btn-sm" onclick="dismissFailedTimeEntry('${esc(r.id)}')">✕ Dismiss</button>
+      </td></tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+// Re-POST the saved payload to the same webhook the time clock uses.
+// hoursWhole/minutesPart aren't stored, so rebuild them from durationMinutes —
+// the QuickBooks module maps those two fields directly.
+async function resendFailedTimeEntry(docId) {
+  const r = failedTimeRows.find(x => x.id === docId);
+  if (!r) return;
+  if (!confirm(`Re-send ${r.employee} — ${r.durationHHMM} on ${r.date} to QuickBooks?\n\nCheck QuickBooks first. An entry that timed out may have posted anyway, and sending it again would double-book the hours.`)) return;
+  const mins = parseInt(r.durationMinutes, 10) || 0;
+  const entry = {
+    id: r.entryId, employee: r.employee, date: r.date, project: r.project,
+    costCode: r.costCode, costCodeLabel: r.costCodeLabel,
+    startTime: r.startTime, endTime: r.endTime,
+    hourlyRate: r.hourlyRate, description: r.description,
+    durationMinutes: String(mins),
+    hoursWhole: String(Math.floor(mins/60)), minutesPart: String(mins%60),
+    durationHHMM: r.durationHHMM, qbEmployeeId: r.qbEmployeeId
+  };
+  try {
+    await fetch('https://hook.us2.make.com/4ozhujldkbtd4266f5pekrdlfcmjqbhh', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry)
+    });
+    await markFailedTimeResolved(docId);
+    toast('Re-sent — confirm it posted in QuickBooks.');
+  } catch (err) {
+    toast('Re-send failed: ' + err.message);
+  }
+}
+
+async function dismissFailedTimeEntry(docId) {
+  if (!confirm('Dismiss this entry?\n\nOnly do this once the hours are actually in QuickBooks — re-sent, or keyed in by hand.')) return;
+  await markFailedTimeResolved(docId);
+  toast('Dismissed.');
+}
+
+async function markFailedTimeResolved(docId) {
+  // onSnapshot re-renders and drops the row once status flips.
+  await db.collection('timelogs_failed').doc(docId)
+    .update({ status: 'resolved', resolvedAt: new Date().toISOString() });
 }
 
 // ─── DOCUMENTS ─────────────────────────────────────────────────
