@@ -2858,19 +2858,19 @@ const LOAN_INFO = {
       id: 'investor',
       lender: 'Private Investor Loan (Family)',
       borrower: 'JKING Enterprises LLC d/b/a Falcon Enterprises LLC',
-      commitment: 105000,
+      commitment: 125000,
       rate: 5.0,                       // fixed
       rateBasis: '5.00% fixed · simple interest',
       interestType: 'simple-daily',    // daily accrual on outstanding balance
       dayCount: 365,                   // Actual/365
-      payCadence: 'monthly',           // interest paid at the end of each month
+      payCadence: 'at-closing',        // accrues; nothing paid until 326 sells
       fsKey: 'loan_326_investor',      // QB-linked liability account register
       editableBalance: true,           // allow manual balance entry until QB sync wired
       openTerm: true,                  // no fixed maturity
       maturity: null,
       settled: null,
       collateral: '326 Roddy Branch Rd',
-      note: 'Drawn before the Pinnacle Bank line to minimize interest. Interest paid at the end of each month; principal + any remaining accrued interest repaid at 326 closing.',
+      note: 'Drawn before the Pinnacle Bank line to minimize interest. Nothing is paid monthly — interest accrues and is repaid together with the principal at 326 closing.',
       closingCosts: 0,
       closingBreakdown: [],
     },
@@ -2910,46 +2910,89 @@ function normDateStr(s) {
   return s;
 }
 
-// Simple daily-interest accrual for the current calendar month. Walks each day
-// 1st→today, accruing balance×dailyRate. Uses the dated register for exact
-// average-daily-balance accrual; falls back to current balance if no register.
-function simpleDailyStats(loanDoc, balance, rate, dayCount) {
+// Simple daily-interest accrual on the drawn balance. Walks each day from the
+// first advance through today, accruing balance×dailyRate, and returns both the
+// life-to-date total (owed at closing) and the current month's slice. Uses the
+// dated register for exact average-daily-balance accrual; falls back to the
+// manually entered advance date + balance when no register has synced yet.
+function simpleDailyStats(loanDoc, balance, rate, dayCount, startDate) {
+  const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const dailyRate = (rate / 100) / (dayCount || 365);
   const dailyInterest = balance * dailyRate;
   const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth();
-  const daysInMonth = new Date(y, m + 1, 0).getDate();
-  const daysElapsed = now.getDate();           // through today, inclusive
   const monthLabel = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-  let mtd;
+  const today = ymd(now);
+
+  // Dated advances/repayments, oldest first.
+  let ev = [];
   const rows = parseGLRows(loanDoc);
   if (rows && rows.length) {
-    const ev = rows.map(r => ({ d: normDateStr(r.date), a: Number(r.amount) || 0 })).filter(r => r.d);
-    mtd = 0;
-    for (let day = 1; day <= daysElapsed; day++) {
-      const ds = `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const bal = Math.abs(ev.filter(e => e.d <= ds).reduce((s, e) => s + e.a, 0));
-      mtd += bal * dailyRate;
-    }
-  } else {
-    mtd = dailyInterest * daysElapsed;          // approximate w/ current balance
+    ev = rows.map(r => ({ d: normDateStr(r.date), a: Number(r.amount) || 0 }))
+             .filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.d)).sort((a, b) => a.d < b.d ? -1 : 1);
+  } else if (balance) {
+    const sd = normDateStr(startDate);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(sd)) ev = [{ d: sd, a: balance }];
   }
-  const projected = mtd + dailyInterest * (daysInMonth - daysElapsed);
-  return { dailyRate, dailyInterest, mtd, projected, daysElapsed, daysInMonth, monthLabel };
+
+  // The register holds every advance ever made on this account, including
+  // earlier loans (318 Roddy Branch) that were paid off in full. Accrue only the
+  // current cycle: restart at the last point the balance returned to zero.
+  let cycle = 0;
+  { let bal = 0;
+    for (let k = 0; k < ev.length; k++) {
+      bal += ev[k].a;
+      if (Math.abs(bal) < 0.005) cycle = k + 1;
+    } }
+  ev = ev.slice(cycle);
+
+  let total = null, mtd = null, firstDraw = null;
+  if (ev.length && ev[0].d <= today) {
+    firstDraw = ev[0].d;
+    total = 0; mtd = 0;
+    let i = 0, bal = 0, guard = 0;
+    for (const day = new Date(firstDraw + 'T00:00:00'); ymd(day) <= today && guard++ < 20000; day.setDate(day.getDate() + 1)) {
+      const ds = ymd(day);
+      while (i < ev.length && ev[i].d <= ds) bal += ev[i++].a;
+      const int = Math.abs(bal) * dailyRate;
+      total += int;
+      if (ds.slice(0, 7) === today.slice(0, 7)) mtd += int;
+    }
+  }
+  return { dailyRate, dailyInterest, total, mtd, firstDraw, monthLabel };
 }
 
 // Manual outstanding-balance entry for the investor loan (usable before the
-// QB-linked sync is wired; QB sync overwrites it once connected).
+// QB-linked sync is wired; QB sync overwrites it once connected). The advance
+// date anchors the life-to-date interest accrual.
 function setInvestorBalance(project) {
   requireAdminThen(() => {
-    const cur = (() => { const l = S.get('loan_' + project + '_investor', null); return (l && l.balance != null) ? l.balance : ''; })();
-    const raw = prompt('Outstanding principal advanced by the investor (drawn to date):', cur);
+    const prev = S.get('loan_' + project + '_investor', null) || {};
+    const raw = prompt('Outstanding principal advanced by the investor (drawn to date):', prev.balance != null ? prev.balance : '');
     if (raw === null) return;
     const n = parseFloat(String(raw).replace(/[^0-9.]/g, ''));
     if (isNaN(n)) { alert('Please enter a number.'); return; }
-    S.set('loan_' + project + '_investor', { balance: n, lastSync: new Date().toISOString().slice(0, 10), manual: true });
+    const d = setInvestorStart(project, n, true);
+    if (d === null) return;
+    S.set('loan_' + project + '_investor', { balance: n, startDate: d, lastSync: new Date().toISOString().slice(0, 10), manual: true });
     renderLoan(project);
   });
+}
+
+// Date the funds were advanced — interest accrues from this day forward.
+// Returns the date when called with `defer` (caller writes the doc), else saves.
+function setInvestorStart(project, balance, defer) {
+  const run = () => {
+    const prev = S.get('loan_' + project + '_investor', null) || {};
+    const raw = prompt('Date the funds were advanced (YYYY-MM-DD) — interest accrues from this date:', prev.startDate || '');
+    if (raw === null) return null;
+    const d = normDateStr(raw.trim());
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { alert('Please enter a date as YYYY-MM-DD.'); return null; }
+    if (defer) return d;
+    S.set('loan_' + project + '_investor', Object.assign({}, prev, { balance: balance != null ? balance : prev.balance, startDate: d, manual: true }));
+    renderLoan(project);
+    return d;
+  };
+  return defer ? run() : requireAdminThen(run);
 }
 
 function renderLoan(project) {
@@ -2998,18 +3041,24 @@ function renderLoanCard(info, project) {
   let interestStats = '';
   let payCallout = '';
   if (isSimple) {
-    const s = simpleDailyStats(loan, hasDrawn ? drawn : 0, rate, info.dayCount);
-    interestStats = stat('📅 Interest/Day', hasDrawn ? fmt(Math.round(s.dailyInterest * 100) / 100) + '/day' : '$0/day', 'var(--text-muted)')
-      + stat('📆 Accrued This Month', hasDrawn ? fmt(Math.round(s.mtd * 100) / 100) : '$0.00', 'var(--text-muted)');
+    const s = simpleDailyStats(loan, hasDrawn ? drawn : 0, rate, info.dayCount, loan?.startDate);
+    const cents = v => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const needsDate = hasDrawn && drawn > 0 && s.total == null;
+    const totalTxt = s.total != null ? cents(s.total)
+      : (needsDate ? `<span style="color:var(--gold);">✎ set advance date</span>` : '$0.00');
+    interestStats = stat('📅 Interest/Day', hasDrawn ? cents(s.dailyInterest) + '/day' : '$0/day', 'var(--text-muted)')
+      + stat('💰 Total Interest Accrued', totalTxt, s.total ? 'var(--red)' : 'var(--text-muted)',
+             needsDate ? `setInvestorStart('${project}')` : '');
     payCallout = `
       <div style="background:linear-gradient(90deg,rgba(93,179,228,0.12),transparent);border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:0 8px 8px 0;padding:12px 14px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
         <div>
-          <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.03em;">💵 Pay investor at end of ${s.monthLabel}</div>
-          <div style="font-weight:800;font-size:1.45rem;color:var(--gold);margin-top:2px;">${fmt(Math.round(s.projected * 100) / 100)}</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.03em;">💵 Payoff at 326 closing — principal + interest to date</div>
+          <div style="font-weight:800;font-size:1.45rem;color:var(--gold);margin-top:2px;">${s.total != null ? cents((hasDrawn ? drawn : 0) + s.total) : (hasDrawn ? fmt(drawn) + ' <span style="font-size:0.8rem;color:var(--text-muted);">+ interest</span>' : '$0.00')}</div>
         </div>
         <div style="text-align:right;font-size:0.72rem;color:var(--text-muted);line-height:1.5;">
-          Accrued through today: <strong style="color:var(--text);">${fmt(Math.round(s.mtd * 100) / 100)}</strong><br>
-          + ${s.daysInMonth - s.daysElapsed} more day${s.daysInMonth - s.daysElapsed === 1 ? '' : 's'} at ${fmt(Math.round(s.dailyInterest * 100) / 100)}/day
+          Principal: <strong style="color:var(--text);">${hasDrawn ? fmt(drawn) : '$0'}</strong><br>
+          Interest accrued${s.firstDraw ? ' since ' + s.firstDraw : ''}: <strong style="color:var(--text);">${s.total != null ? cents(s.total) : '—'}</strong><br>
+          ${s.mtd != null ? `${s.monthLabel} so far: <strong style="color:var(--text);">${cents(s.mtd)}</strong> · ` : ''}growing ${cents(s.dailyInterest)}/day
         </div>
       </div>`;
   } else {
@@ -3031,7 +3080,7 @@ function renderLoanCard(info, project) {
   const termTxt = info.openTerm ? 'Open term — repaid at 326 closing'
     : (info.maturity ? 'Matures ' + info.maturity : '');
   const footer = isSimple
-    ? `Borrower: ${info.borrower} · ${info.rateBasis}, Actual/365 daily on drawn balance · interest paid monthly · ${termTxt}. ${info.note || ''}`
+    ? `Borrower: ${info.borrower} · ${info.rateBasis}, Actual/365 daily on drawn balance · interest accrues, paid at closing · ${termTxt}. ${info.note || ''}`
     : `Borrower: ${info.borrower}${info.settled ? ' · Settled ' + info.settled : ''} · ${info.interestType === 'interest-only' ? 'Interest-only on drawn balance' : info.interestType}${info.maturity ? ' · Matures ' + info.maturity : ''}. 330 Roddy Branch is Falcon cash — no loan.`;
 
   return `
