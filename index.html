@@ -763,11 +763,11 @@ function handleFirestoreUpdate(key) {
   else if (key === 'budget_326')      { renderBudget('326'); renderProjectDetail('326'); }
   else if (key === 'qb_balance_330')  { renderBudget('330'); renderProjectDetail('330'); }
   else if (key === 'qb_balance_326')  { renderBudget('326'); renderProjectDetail('326'); }
-  else if (key === 'gl_330')          { renderPhaseBudget('330'); renderBudget('330'); renderBids('330'); }
+  else if (key === 'gl_330')          { renderPhaseBudget('330'); renderBudget('330'); renderBids('330'); refresh326Prediction(); }
   else if (key === 'gl_326')          { renderPhaseBudget('326'); renderBudget('326'); renderBids('326'); }
-  else if (key === 'phasestages_330') { renderStages('330'); renderPhaseBudget('330'); renderProjectDetail('330'); }
+  else if (key === 'phasestages_330') { renderStages('330'); renderPhaseBudget('330'); renderProjectDetail('330'); refresh326Prediction(); }
   else if (key === 'phasestages_326') { renderStages('326'); renderPhaseBudget('326'); renderProjectDetail('326'); }
-  else if (key === 'phasebudget_330') { renderPhaseBudget('330'); renderBudget('330'); }
+  else if (key === 'phasebudget_330') { renderPhaseBudget('330'); renderBudget('330'); refresh326Prediction(); }
   else if (key === 'phasebudget_326') { renderPhaseBudget('326'); renderBudget('326'); }
   else if (key === 'materials_330')   renderMaterials('330');
   else if (key === 'materials_326')   renderMaterials('326');
@@ -875,7 +875,7 @@ const PLAN_DATA = {
       'Trim, Int. Doors & HW':   { projected: 22000,  note: 'All casing, base, interior doors, hardware' },
       'Plumbing Fixtures':       { projected: 10000,  note: '3 baths + kitchen + laundry fixtures' },
       'Light Fixtures & Elec. Finish': { projected: 8000, note: 'Fixtures, outlets, switches' },
-      'Appliances':              { projected: 7000,   note: 'Range, DW, microhood, fridge allowance' },
+      'Appliances':              { projected: 5036,   note: 'Actual — Home Depot range + appliance package (8/12/26)' },
       'Concrete – Drive/Porch':  { projected: 16000,  note: 'Driveway, front porch, back deck pad' },
       'Landscaping & Grading':   { projected: 12000,  note: 'Final grade, seed/sod, minimal landscaping' },
       'Contingency (5%)':        { projected: 25000,  note: '~5% buffer on total projected costs' },
@@ -920,7 +920,7 @@ const PLAN_DATA = {
       'Trim, Int. Doors & HW':     { projected: 22000,  note: 'All casing, base, interior doors, hardware' },
       'Plumbing Fixtures':         { projected: 10000,  note: '3 baths + kitchen + laundry fixtures' },
       'Light Fixtures & Elec. Finish': { projected: 8000, note: 'Fixtures, outlets, switches' },
-      'Appliances':                { projected: 7000,   note: 'Range, DW, microhood, fridge allowance' },
+      'Appliances':                { projected: 5036,   note: 'Per 330 actual — Home Depot range + appliance package' },
       'Concrete – Drive/Porch':    { projected: 16000,  note: 'Driveway, front porch, back deck pad' },
       'Landscaping & Grading':     { projected: 12000,  note: 'Final grade, seed/sod, minimal landscaping' },
       'Contingency (5%)':          { projected: 26000,  note: '~5% buffer — steeper roof and dormer add risk' },
@@ -1012,6 +1012,8 @@ function setPredict326(on) {
   localStorage.setItem('fd_predict_326', on ? '1' : '0');
   renderPhaseBudget('326'); renderBudget('326'); renderProjectDetail('326');
 }
+// 326's predicted budget is built from 330's QB actuals — re-render 326 whenever 330's data changes.
+function refresh326Prediction() { renderPhaseBudget('326'); renderBudget('326'); renderProjectDetail('326'); }
 function resetPredict326() { // clear pinned (manually-edited) 326 phases
   S.set('phasebudget_326', {});
   renderPhaseBudget('326'); renderBudget('326'); renderProjectDetail('326');
@@ -1107,12 +1109,13 @@ function descPhase(t) {
   if (has('bank fee','loan fee','loan cost','origination','draw fee','financing','interest','lender','appraisal')) return 'Loan / Financing'; // construction-loan costs tracked independently
   if (has('lot closing','title fee','closing cost')) return 'Lot Acquired';
   if (has('tap fee','sewer tap','water tap','dumpster','dump fee','portable toilet','porta-john','porta john','sanitation','temp power','temporary power','utility deposit','meter fee','impact fee')) return 'Utilities / Site Fees'; // site services & utility connections (bare 'sewer'/'water' avoided — collide with plumbing)
+  if (has('punch','cleaning')) return 'Punch List'; // punch-out / final-clean runs at the end of the build
   if (has('footer','footing','foundation pour','cmu','block','rebar','excavat','grading','crawlspace','waterproof','sand','gravel')) return 'Foundation';
-  if (has('flatwork','driveway','sidewalk','slab','final grade','landscap','sod','seeding','retaining wall')) return 'Exterior Finishes'; // outdoor/final-steps only (driveway, flatwork, grading, landscaping)
+  if (has('flatwork','driveway','sidewalk','slab','final grade','landscap','lanscap','sod','seeding','retaining wall','plants','mailbox')) return 'Exterior Finishes'; // outdoor/final-steps only (driveway, flatwork, grading, landscaping)
   if (has('framing','lumber','truss','roof','shingle','soffit','fascia','siding','gutter','exterior door','exterior trim','window','decking','garage door','brick','mortar','brick veneer','brick labor','finish brick','weep','wall tie','lintel','stone install','stone veneer','exterior paint','ext paint','siding paint','paint exterior')) return 'Framing & Exterior Shell'; // shell openings + wall finish (windows, ext/garage doors, brick/stone/siding veneer, ext. paint) per NAHB — structural block still caught above by cmu/block→Foundation
   if (has('rough plumb','rough electric','electrical rough','rough-in','rough in','hvac','ductwork','duct ','mechanical')) return 'MEP Rough-in';
   if (has('drywall','sheetrock','gypsum','insulat')) return 'Drywall & Insulation';
-  if (has('cabinet','countertop','tile','lvp','wood floor','carpet','flooring','interior paint','interior trim','interior door','stair part','vanity','backsplash','fixture','appliance','lighting','hardware','shelving','closet shelf','shelf','fireplace')) return 'Interior Finishes';
+  if (has('cabinet','countertop','tile','lvp','wood floor','carpet','flooring','interior paint','interior trim','interior door','stair part','vanity','backsplash','fixture','appliance','lighting','hardware','shelving','closet shelf','shelf','fireplace','setout','set out','light bulb','range cord')) return 'Interior Finishes'; // setout = finish plumbing; range cord = appliance hookup
   return null;
 }
 
@@ -1243,7 +1246,7 @@ const MATERIALS = {
     { id: 'hvac',             item: 'HVAC rough-in & install', vendor: 'A1 Finchum', cost: 0, status: 'ordered', neededBy: '2026-09-15' },
     // Masonry (block + brick) intentionally NOT a manual line — it's driven directly
     // from the QuickBooks GL, which splits it: block labor -> Foundation, brick labor -> Framing & Exterior Shell.
-    { id: 'appliances',       item: 'Appliances', vendor: 'Costco', cost: 0, status: 'not-ordered', neededBy: '2026-07-25' },
+    { id: 'appliances',       item: 'Appliances', vendor: 'Home Depot', cost: 5036, status: 'installed', neededBy: '2026-07-25' }, // range + appliance package, bought at Home Depot 8/12 — broken out of the general HD supplies row (GL_CARVEOUTS)
     { id: 'hardware',         item: 'Hardware (knobs / pulls)', vendor: 'TBD', cost: 0, status: 'not-ordered', neededBy: '2026-07-10' },
     { id: 'fireplace',        item: 'Fireplace + stone', vendor: "Archie's", cost: 4135, status: 'installed', neededBy: '2026-04-15' },
     { id: 'gutters',          item: 'Gutters (materials + labor)', vendor: 'Robbins Siding & Guttering', cost: 1440, status: 'installed', neededBy: '2026-05-08' },
@@ -2247,8 +2250,11 @@ function renderProjectDetail(project) {
   // Commission calculated dynamically from sale price
   const commissionRate = p.commissionRate || 0.03;
   const commission = Math.round(displaySale * commissionRate);
-  // Handoff projected all-in (authoritative) takes precedence over the line-item estimate
-  const baseCost = p.projectedAllIn || totalBudgetLines;
+  // 326: the phase budget (predicted from 330's actual costs) — same total as its
+  // Budget Snapshot. 330: handoff projected all-in, else the line-item estimate.
+  const baseCost = project === '326'
+    ? PHASE_ORDER.reduce((s, ph) => s + phaseBudget(project, ph), 0)
+    : (p.projectedAllIn || totalBudgetLines);
   const totalProjected = baseCost + commission;
 
   const remaining = totalProjected - qbSpent;
@@ -2696,6 +2702,19 @@ function vendorOpenAP(project, vendor) {
   }, 0);
 }
 
+// GL lines whose memo names a distinct purchase are carved out of a general
+// supplier's row into their own Materials line (e.g. the appliance package
+// bought at Home Depot shouldn't hide inside "General job-site supplies").
+// Carved rows are keyed "<vendor>::<tag>"; a manual line whose item matches the
+// same keywords attaches to that row.
+const GL_CARVEOUTS = [
+  { tag: 'appliances', kw: ['appliance'], label: 'Appliances' },
+];
+function glCarveOut(text) {
+  const t = (text || '').toLowerCase();
+  return GL_CARVEOUTS.find(c => c.kw.some(k => t.includes(k))) || null;
+}
+
 // Default scope text for GL-only vendor rows (no manual material line, no bid).
 // Some vendors do different work by phase, so entries may pin a phase (ph); the
 // lookup prefers a phase-specific match, then a phase-agnostic one. Manual line
@@ -3114,10 +3133,10 @@ function renderLoanCard(info, project) {
 function vendorKeyMatch(vendor, keys) {
   const toks = vendorTokens(vendor);
   if (toks.length) {
-    for (const k of keys) { const w = k.split(' '); if (toks.some(t => w.includes(t))) return k; }
+    for (const k of keys) { const w = k.split('::')[0].split(' '); if (toks.some(t => w.includes(t))) return k; }
   }
   const norm = normVendor(vendor);
-  if (norm.length >= 6) for (const k of keys) { if (k.includes(norm) || (k.length >= 6 && norm.includes(k))) return k; }
+  if (norm.length >= 6) for (const k of keys) { const b = k.split('::')[0]; if (b.includes(norm) || (b.length >= 6 && norm.includes(b))) return k; }
   return null;
 }
 
@@ -3147,17 +3166,19 @@ function renderMaterials(project) {
   glRows.forEach(r => {
     const ph = categorizePhase(r.payee, r.memo);
     if (!rows[ph]) return;
-    const name = (r.payee || '').trim(); const key = normVendor(name);
+    const name = (r.payee || '').trim(); let key = normVendor(name);
     if (!key) return;
+    const carve = glCarveOut(r.memo);
+    if (carve) key += '::' + carve.tag;
     const pv = (glAmts[ph] = glAmts[ph] || {});
-    (pv[key] = pv[key] || { name, amts: [] }).amts.push(Number(r.amount) || 0);
+    (pv[key] = pv[key] || { name, amts: [], label: carve ? carve.label : '' }).amts.push(Number(r.amount) || 0);
   });
 
   // 2. Bids → group by phase + matched vendor key.
   const bidGroups = {}; // phase -> vendorKey -> [bids]
   bids.forEach(b => {
     if (!rows[b.phase]) return;
-    const key = vendorKeyMatch(b.vendor, Object.keys(glAmts[b.phase] || {})) || normVendor(b.vendor) || ('bid' + b.id);
+    const key = vendorKeyMatch(b.vendor, Object.keys(glAmts[b.phase] || {}).filter(k => !k.includes('::'))) || normVendor(b.vendor) || ('bid' + b.id);
     const pv = (bidGroups[b.phase] = bidGroups[b.phase] || {});
     (pv[key] = pv[key] || []).push(b);
   });
@@ -3200,6 +3221,7 @@ function renderMaterials(project) {
       } else {
         const r = blank(name);
         r.actual = amts.reduce((s, a) => s + a, 0);
+        if (gl && gl.label) r.label = gl.label;
         if (list.length === 1) { const b = list[0]; r.est = Number(b.amount) || 0; r.estSrc = 'bid'; r._bidId = b.id; if (b.trade) r.label = b.trade; }
         rows[ph][key] = r;
       }
@@ -3212,8 +3234,10 @@ function renderMaterials(project) {
     if (m.selection) { selections.push(m); return; }
     const ph = categorizePhase(m.vendor, m.item);
     if (!rows[ph]) return;
-    let key = vendorKeyMatch(m.vendor, Object.keys(rows[ph]));
-    if (!key) { key = normVendor(m.vendor) || ('m-' + m.id); rows[ph][key] = rows[ph][key] || blank(m.vendor); }
+    const carve = glCarveOut(m.item);
+    const cand = Object.keys(rows[ph]).filter(k => carve ? k.endsWith('::' + carve.tag) : !k.includes('::'));
+    let key = vendorKeyMatch(m.vendor, cand);
+    if (!key) { key = (normVendor(m.vendor) || ('m-' + m.id)) + (carve ? '::' + carve.tag : ''); rows[ph][key] = rows[ph][key] || blank(m.vendor); }
     const row = rows[ph][key];
     if (m.item) row.label = m.item;
     if (m.status) row.status = m.status;
