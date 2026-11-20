@@ -769,7 +769,7 @@ function handleFirestoreUpdate(key) {
   else if (key === 'phasestages_326') { renderStages('326'); renderPhaseBudget('326'); renderProjectDetail('326'); }
   else if (key === 'phasebudget_330') { renderPhaseBudget('330'); renderBudget('330'); refresh326Prediction(); }
   else if (key === 'phasebudget_326') { renderPhaseBudget('326'); renderBudget('326'); }
-  else if (key === 'materials_330')   renderMaterials('330');
+  else if (key === 'materials_330')   { renderMaterials('330'); renderMaterials('326'); }
   else if (key === 'materials_326')   renderMaterials('326');
   else if (key === 'ap_330')          renderMaterials('330');
   else if (key === 'ap_326')          renderMaterials('326');
@@ -1010,10 +1010,10 @@ const PREDICT_EXCLUDE_326 = new Set(['Lot Acquired', 'Loan / Financing']);
 function predict326On() { return localStorage.getItem('fd_predict_326') !== '0'; } // default ON
 function setPredict326(on) {
   localStorage.setItem('fd_predict_326', on ? '1' : '0');
-  renderPhaseBudget('326'); renderBudget('326'); renderProjectDetail('326');
+  refresh326Prediction();
 }
 // 326's predicted budget is built from 330's QB actuals — re-render 326 whenever 330's data changes.
-function refresh326Prediction() { renderPhaseBudget('326'); renderBudget('326'); renderProjectDetail('326'); }
+function refresh326Prediction() { renderPhaseBudget('326'); renderBudget('326'); renderProjectDetail('326'); renderMaterials('326'); }
 function resetPredict326() { // clear pinned (manually-edited) 326 phases
   S.set('phasebudget_326', {});
   renderPhaseBudget('326'); renderBudget('326'); renderProjectDetail('326');
@@ -2544,7 +2544,8 @@ const MAT_STATUS_ORDER = ['not-ordered','bid-in','ordered','on-site','installed'
 function getMaterials(project) {
   const base = MATERIALS[project] || [];
   const ov = S.get('materials_' + project, {});
-  return base.map((m, i) => ({ ...m, ...(ov[m.id] || {}), _i: i }));
+  return base.map((m, i) => ({ ...m, ...(ov[m.id] || {}), _i: i,
+    _costTyped: ov[m.id]?.cost !== undefined && ov[m.id]?.cost !== null && ov[m.id]?.cost !== '' }));
 }
 
 function saveMaterialField(project, id, field, value) {
@@ -3145,12 +3146,10 @@ function vendorKeyMatch(vendor, keys) {
 // vendor who works across phases — e.g. block labor vs. brick labor — splits
 // correctly). Bids layer on as the estimate; manual material lines add scope
 // labels, status and needed-by dates and surface planned-but-unbilled items.
-function renderMaterials(project) {
-  const el = document.getElementById('materials-' + project);
-  if (!el) return;
-  const editBtn = `<button id="mat-edit-${project}" class="edit-toggle${editMode?' on':''}" onclick="toggleEditMode('${project}')">${editMode?'✓ Done Editing':'✏️ Edit'}</button>`;
-  const lbl = s => (s||'').replace('-',' ');
-
+// Builds the Materials rows per phase: { PHASES, rows: { phase: { key: row } } }.
+// Row keys are the GL vendor key, "<vendor>#<bidId>" for a per-bid line, or
+// "<vendor>::<tag>" for a carved-out purchase (GL_CARVEOUTS).
+function buildMaterialRows(project) {
   const manual  = getMaterials(project);
   const glRows  = parseGLRows(S.get('gl_' + project, null)) || [];
   const bids    = getBids().filter(b => b.project === project && b.status !== 'discarded');
@@ -3243,8 +3242,70 @@ function renderMaterials(project) {
     if (m.status) row.status = m.status;
     if (m.neededBy) row.neededBy = m.neededBy;
     if (row._i === null) row._i = m._i;
-    if (!row.estSrc && (m.cost || 0) > 0 && !row.actual) { row.est = Number(m.cost); row.estSrc = 'manual'; } // manual estimate yields to real GL spend once invoiced
+    if (!row.estSrc && (m.cost || 0) > 0 && !row.actual) { row.est = Number(m.cost); row.estSrc = 'manual'; row._costTyped = m._costTyped; } // manual estimate yields to real GL spend once invoiced
   });
+  return { PHASES, rows };
+}
+
+// 326 is the mirror of 330 (complete): fill 326's Materials estimates from what
+// each matching 330 line actually cost in QuickBooks, scaled like the phase
+// prediction (size factor + Framing/Exterior premium). A bid, or a cost typed
+// for 326, still wins. 330 lines 326 hasn't been billed for yet are added as
+// estimate-only rows, so the full 330 scope shows up as the comparison.
+function seedEstimatesFrom330(rows, PHASES) {
+  const src = buildMaterialRows('330').rows;
+  const carveOf = k => k.split('#')[0].split('::')[1] || '';
+  const baseOf  = k => k.split('#')[0];
+  PHASES.forEach(ph => {
+    const factor = SIZE_FACTOR_326 * (PHASE_PREMIUM_326[ph] || 1);
+    // Group 330's billed lines by vendor (+ carve-out) so a vendor split across
+    // several bids in 330 maps onto a single 326 line as one total.
+    const groups = {};
+    Object.entries(src[ph] || {}).forEach(([k, r]) => {
+      if (!(r.actual > 0)) return;
+      (groups[baseOf(k)] = groups[baseOf(k)] || []).push([k, r]);
+    });
+    // Same vendor in both houses first, so a loose name match (shared words like
+    // "excavating" or "concrete") can't steal a line that has its own exact match.
+    const claimed = new Set(), plan = [];
+    Object.entries(groups).forEach(([base, list]) => {
+      const exact = Object.keys(rows[ph]).filter(k => baseOf(k) === base);
+      if (exact.length) { exact.forEach(k => claimed.add(k)); plan.push([base, list, exact]); }
+      else plan.push([base, list, null]);
+    });
+    plan.forEach(entry => {
+      const [base, list] = entry;
+      if (entry[2]) return;
+      const vendor = list[0][1].vendor, carve = carveOf(base);
+      const loose = Object.keys(rows[ph]).filter(k => !claimed.has(k) && carveOf(k) === carve && vendorKeyMatch(vendor, [baseOf(k)]));
+      if (loose.length === 1) { claimed.add(loose[0]); entry[2] = loose; }
+    });
+    plan.forEach(([base, list, matches]) => {
+      const total = list.reduce((s, [, r]) => s + r.actual, 0);
+      if (!matches) {
+        // 326 has no line for this 330 scope yet → estimate-only row(s), one per 330 line.
+        list.forEach(([k, r]) => {
+          rows[ph][k] = { vendor: r.vendor, label: r.label || '', est: Math.round(r.actual * factor), estSrc: '330',
+                          actual: 0, status: '', neededBy: '', _i: null, _bidId: null, _act330: r.actual };
+        });
+        return;
+      }
+      if (matches.length !== 1) return; // 326 already splits this vendor (e.g. per-bid lines) — leave it
+      const row = rows[ph][matches[0]];
+      row._act330 = total;
+      if (row.estSrc === 'bid' || (row.estSrc === 'manual' && row._costTyped)) return;
+      row.est = Math.round(total * factor); row.estSrc = '330';
+    });
+  });
+}
+
+function renderMaterials(project) {
+  const el = document.getElementById('materials-' + project);
+  if (!el) return;
+  const editBtn = `<button id="mat-edit-${project}" class="edit-toggle${editMode?' on':''}" onclick="toggleEditMode('${project}')">${editMode?'✓ Done Editing':'✏️ Edit'}</button>`;
+  const from330 = project === '326' && predict326On();
+  const { PHASES, rows } = buildMaterialRows(project);
+  if (from330) seedEstimatesFrom330(rows, PHASES);
 
   // ── totals + QB-driven status (GL spend + A/P payment state) ──
   // Pending = estimate on file, nothing billed yet; Invoiced = billed, full balance
@@ -3281,7 +3342,8 @@ function renderMaterials(project) {
   };
   const estCell = (r) => {
     if (!r.est) return '<span style="color:var(--text-muted);">—</span>';
-    const tag = r.estSrc === 'bid' ? ' <span class="frombid" title="From a matched bid — edit on the Bids card">📋 bid</span>' : '';
+    const tag = r.estSrc === 'bid' ? ' <span class="frombid" title="From a matched bid — edit on the Bids card">📋 bid</span>'
+              : r.estSrc === '330' ? ` <span class="frombid" title="330 actual ${fmt(Math.round(r._act330 || 0))} in QuickBooks, adjusted for 326">↗330</span>` : '';
     return `${fmt(r.est)}${tag}`;
   };
   const actCell = (r) => r.actual ? `<span style="color:var(--blue);font-variant-numeric:tabular-nums;">${fmt(Math.round(r.actual))}</span>` : '<span style="color:var(--text-muted);">—</span>';
@@ -3352,7 +3414,7 @@ function renderMaterials(project) {
       </div>
       ${apBillsHtml}
       ${phaseHtml}
-      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Each phase auto-fills from actual QuickBooks spend, split line-by-line — a vendor working across phases (e.g. block labor vs. brick labor) appears under each. <span class="frombid">📋 bid</span> = estimate from a matched bid (edit on the Bids card). Status is QuickBooks-driven: <span class="mat-status ms-pending">Pending</span> (estimate on file, nothing billed) → <span class="mat-status ms-invoiced">Invoiced</span> (billed, owed) → <span class="mat-status ms-partial">Partial</span> (partly paid) → <span class="mat-status ms-paid">Paid</span> (paid off). Payment state comes from QuickBooks A/P${apData.asOf?', synced '+apData.asOf:''}. Color &amp; finish selections are in the card below.</div>
+      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;font-style:italic;">Each phase auto-fills from actual QuickBooks spend, split line-by-line — a vendor working across phases (e.g. block labor vs. brick labor) appears under each. <span class="frombid">📋 bid</span> = estimate from a matched bid (edit on the Bids card).${from330 ? ' <span class="frombid">↗330</span> = what that line actually cost on 330 in QuickBooks, adjusted for 326 (+' + ((SIZE_FACTOR_326 - 1) * 100).toFixed(1) + '% size, +' + Math.round((PHASE_PREMIUM_326['Framing & Exterior Shell'] - 1) * 100) + '% on Framing/Exterior for the 9:12 roof + dormer); a bid or a cost you type for 326 replaces it. Hover for the raw 330 figure.' : ''} Status is QuickBooks-driven: <span class="mat-status ms-pending">Pending</span> (estimate on file, nothing billed) → <span class="mat-status ms-invoiced">Invoiced</span> (billed, owed) → <span class="mat-status ms-partial">Partial</span> (partly paid) → <span class="mat-status ms-paid">Paid</span> (paid off). Payment state comes from QuickBooks A/P${apData.asOf?', synced '+apData.asOf:''}. Color &amp; finish selections are in the card below.</div>
     </div>`;
 }
 
