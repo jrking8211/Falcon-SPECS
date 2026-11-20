@@ -1251,7 +1251,7 @@ const MATERIALS = {
     { id: 'fireplace',        item: 'Fireplace + stone', vendor: "Archie's", cost: 4135, status: 'installed', neededBy: '2026-04-15' },
     { id: 'gutters',          item: 'Gutters (materials + labor)', vendor: 'Robbins Siding & Guttering', cost: 1440, status: 'installed', neededBy: '2026-05-08' },
     { id: 'soffit-fascia',    item: 'Soffit & Fascia install labor', vendor: 'Robbins Siding & Guttering', cost: 4834, status: 'installed', neededBy: '2026-05-08' },
-    { id: 'downspouts',       item: 'Downspouts (bill pending)', vendor: 'Robbins Siding & Guttering', cost: 0, status: 'ordered', neededBy: '2026-06-30' },
+    { id: 'downspouts',       item: 'Downspouts', vendor: 'Robbins Siding & Guttering', cost: 0, status: 'ordered', neededBy: '2026-06-30' },
     { id: 'garage-door',      item: 'Garage door', vendor: 'Farmer Garage Door', cost: 5400, status: 'ordered', neededBy: '2026-07-01' },
     { id: 'plumbing-shower',  item: 'Plumbing materials — fiberglass shower (upstairs bath add-on)', vendor: 'Ferguson', cost: 950, status: 'ordered', neededBy: '2026-06-25' },
   ],
@@ -3238,14 +3238,31 @@ function buildMaterialRows(project) {
     let key = vendorKeyMatch(m.vendor, cand);
     if (!key) { key = (normVendor(m.vendor) || ('m-' + m.id)) + (carve ? '::' + carve.tag : ''); rows[ph][key] = rows[ph][key] || blank(m.vendor); }
     const row = rows[ph][key];
-    if (m.item) row.label = m.item;
+    // Several manual lines for one vendor share a row (e.g. Robbins gutters + soffit
+    // + downspouts) — list them all rather than letting the last one win.
+    if (m.item) { row.label = row._manualLabel ? row.label + ' · ' + m.item : m.item; row._manualLabel = true; }
     if (m.status) row.status = m.status;
     if (m.neededBy) row.neededBy = m.neededBy;
     if (row._i === null) row._i = m._i;
     if (!row.estSrc && (m.cost || 0) > 0 && !row.actual) { row.est = Number(m.cost); row.estSrc = 'manual'; row._costTyped = m._costTyped; } // manual estimate yields to real GL spend once invoiced
   });
+  // A fully built house has no costs still coming: drop lines with no QuickBooks
+  // spend (a leftover estimate, e.g. a hardware allowance bought under another line).
+  if (projectBuilt(project)) PHASES.forEach(ph => Object.keys(rows[ph]).forEach(k => { if (!rows[ph][k].actual) delete rows[ph][k]; }));
   return { PHASES, rows };
 }
+
+// Every construction phase complete (lot, loan and listing/sale aren't construction).
+function projectBuilt(project) {
+  return PHASE_ORDER.filter(ph => !['Lot Acquired', 'Loan / Financing', 'Listing / Sale'].includes(ph))
+    .every(ph => phaseStageStatus(project, ph).status === 'done');
+}
+
+// 330 vendors whose scope another vendor covered on 326, so their 330 cost lands
+// on that vendor's 326 line instead of showing as a separate pending line.
+const VENDOR_SUB_326 = [
+  ['little river', 'dunlap'], // 330 split excavation (Little River + Dunlap); Dunlap did all of 326's
+];
 
 // 326 is the mirror of 330 (complete): fill 326's Materials estimates from what
 // each matching 330 line actually cost in QuickBooks, scaled like the phase
@@ -3264,6 +3281,15 @@ function seedEstimatesFrom330(rows, PHASES) {
     Object.entries(src[ph] || {}).forEach(([k, r]) => {
       if (!(r.actual > 0)) return;
       (groups[baseOf(k)] = groups[baseOf(k)] || []).push([k, r]);
+    });
+    VENDOR_SUB_326.forEach(([from, to]) => {
+      const fromKey = Object.keys(groups).find(b => b.includes(from));
+      if (!fromKey) return;
+      const toKey = Object.keys(groups).find(b => b.includes(to))
+                 || Object.keys(rows[ph]).map(baseOf).find(b => b.includes(to));
+      if (!toKey) return;
+      groups[toKey] = (groups[toKey] || []).concat(groups[fromKey]);
+      delete groups[fromKey];
     });
     // Same vendor in both houses first, so a loose name match (shared words like
     // "excavating" or "concrete") can't steal a line that has its own exact match.
